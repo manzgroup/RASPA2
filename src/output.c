@@ -4423,6 +4423,11 @@ void PrintPreSimulationStatusCurrentSystem(int system)
                    (double)(Components[i].BendArguments[j][0]*ENERGY_TO_KELVIN),
                    (double)(Components[i].BendArguments[j][1]*RAD2DEG));
                  break;
+               case MANZ_BEND:
+                 fprintf(FilePtr,"\t\tMANZ_BEND: p_0/k_B=%-10.6f [K/rad^2], p_1=%-10.6f [degrees]\n",
+                   (double)(Components[i].BendArguments[j][0]*ENERGY_TO_KELVIN),
+                   (double)(Components[i].BendArguments[j][1]*RAD2DEG));
+                 break;
                case QUARTIC_BEND:
                  // (1/2)p_0*(theta-p_1)^2+(1/3)*p_2*(theta-p_1)^3+(1/4)*p_2*(theta-p_1)^4
                  // ======================================================================
@@ -4732,6 +4737,42 @@ void PrintPreSimulationStatusCurrentSystem(int system)
                   (double)(Components[i].TorsionArguments[j][0]*ENERGY_TO_KELVIN),
                   (double)(Components[i].TorsionArguments[j][1]),
                   (double)(Components[i].TorsionArguments[j][2]*RAD2DEG));
+                break;
+              case CADT_MODE_ONE_ONLY:
+                fprintf(FilePtr,"\t\tCADT_MODE_ONE_ONLY: p_0=%-10.6f [degrees], p_1/k_B=%-10.6f [K]\n",
+                  (double)(Components[i].TorsionArguments[j][0]*RAD2DEG),
+                  (double)(Components[i].TorsionArguments[j][1]*ENERGY_TO_KELVIN));
+                break;
+              case CADT_DIHEDRAL:
+                fprintf(FilePtr,"\t\tCADT_DIHEDRAL: p_0=%-10.6f [degrees], p_1/k_B=%-10.6f [K], p_2/k_B=%-10.6f [K], p_3/k_B=%-10.6f [K], p_4/k_B=%-10.6f [K], p_5/k_B=%-10.6f [K], p_6/k_B=%-10.6f [K], p_7/k_B=%-10.6f [K]\n",
+                  (double)(Components[i].TorsionArguments[j][0]*RAD2DEG),
+                  (double)(Components[i].TorsionArguments[j][1]*ENERGY_TO_KELVIN),
+                  (double)(Components[i].TorsionArguments[j][2]*ENERGY_TO_KELVIN),
+                  (double)(Components[i].TorsionArguments[j][3]*ENERGY_TO_KELVIN),
+                  (double)(Components[i].TorsionArguments[j][4]*ENERGY_TO_KELVIN),
+                  (double)(Components[i].TorsionArguments[j][5]*ENERGY_TO_KELVIN),
+                  (double)(Components[i].TorsionArguments[j][6]*ENERGY_TO_KELVIN),
+                  (double)(Components[i].TorsionArguments[j][7]*ENERGY_TO_KELVIN));
+                break;
+              case ADDT_MODE_ONE_ONLY:
+                fprintf(FilePtr,"\t\tADDT_MODE_ONE_ONLY: p_0=%-10.6f [degrees], p_1/k_B=%-10.6f [K], p_2=%-10.6f [degrees], p_3=%-10.6f [degrees]\n",
+                  (double)(Components[i].TorsionArguments[j][0]*RAD2DEG),
+                  (double)(Components[i].TorsionArguments[j][1]*ENERGY_TO_KELVIN),
+                  (double)(Components[i].TorsionArguments[j][2]*RAD2DEG),
+                  (double)(Components[i].TorsionArguments[j][3]*RAD2DEG));
+                break;
+              case ADDT_DIHEDRAL:
+                fprintf(FilePtr,"\t\tADDT_DIHEDRAL: p_0=%-10.6f [degrees], p_1/k_B=%-10.6f [K], p_2/k_B=%-10.6f [K], p_3/k_B=%-10.6f [K], p_4/k_B=%-10.6f [K], p_5/k_B=%-10.6f [K], p_6/k_B=%-10.6f [K], p_7/k_B=%-10.6f [K], p_8=%-10.6f [degrees], p_9=%-10.6f [degrees]\n",
+                  (double)(Components[i].TorsionArguments[j][0]*RAD2DEG),
+                  (double)(Components[i].TorsionArguments[j][1]*ENERGY_TO_KELVIN),
+                  (double)(Components[i].TorsionArguments[j][2]*ENERGY_TO_KELVIN),
+                  (double)(Components[i].TorsionArguments[j][3]*ENERGY_TO_KELVIN),
+                  (double)(Components[i].TorsionArguments[j][4]*ENERGY_TO_KELVIN),
+                  (double)(Components[i].TorsionArguments[j][5]*ENERGY_TO_KELVIN),
+                  (double)(Components[i].TorsionArguments[j][6]*ENERGY_TO_KELVIN),
+                  (double)(Components[i].TorsionArguments[j][7]*ENERGY_TO_KELVIN),
+                  (double)(Components[i].TorsionArguments[j][8]*RAD2DEG),
+                  (double)(Components[i].TorsionArguments[j][9]*RAD2DEG));
                 break;
               case OPLS_DIHEDRAL:
                 // (1/2)p_0[0]+(1/2)p_1*(1+cos(phi))+(1/2)p_2*(1-cos(2*phi))+(1/2)p_3*(1+cos(3*phi))

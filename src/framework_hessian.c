@@ -3695,7 +3695,8 @@ void ComputeFrameworkBendHessian(REAL *Energy,REAL* Gradient,REAL_MATRIX Hessian
 {
   int i,f1,A,B,C;
   REAL *parms,U;
-  REAL CosTheta,Theta,SinTheta,temp,temp2;
+  REAL CosTheta,Theta,SinTheta,temp,temp2,temp3,temp_G;
+  REAL CosPar1,SinPar1,SQRCosPar1,p_Theta,p_Par1,w_Theta,miu_Theta,DwDcosTheta,DDwDcosTheta,SQRCosTheta;
   REAL rab,rbc,rac;
   POINT posA,posB,posC;
   VECTOR Rab,Rbc,Rac;
@@ -3707,7 +3708,6 @@ void ComputeFrameworkBendHessian(REAL *Energy,REAL* Gradient,REAL_MATRIX Hessian
   REAL_MATRIX3x3 S;
   VECTOR vec_u,vec_v;
   REAL u,v;
-
   for(f1=0;f1<Framework[CurrentSystem].NumberOfFrameworks;f1++)
   {
     for(i=0;i<Framework[CurrentSystem].NumberOfBends[f1];i++)
@@ -3728,7 +3728,6 @@ void ComputeFrameworkBendHessian(REAL *Energy,REAL* Gradient,REAL_MATRIX Hessian
       posA=Framework[CurrentSystem].Atoms[f1][A].Position;
       posB=Framework[CurrentSystem].Atoms[f1][B].Position;
       posC=Framework[CurrentSystem].Atoms[f1][C].Position;
-
       Rab.x=posA.x-posB.x;
       Rab.y=posA.y-posB.y;
       Rab.z=posA.z-posB.z;
@@ -3736,31 +3735,32 @@ void ComputeFrameworkBendHessian(REAL *Energy,REAL* Gradient,REAL_MATRIX Hessian
       vec_u=Rab;
       rab=sqrt(SQR(Rab.x)+SQR(Rab.y)+SQR(Rab.z));
       u=rab;
-      Rab.x/=rab;
-      Rab.y/=rab;
-      Rab.z/=rab;
-
+      
       Rbc.x=posC.x-posB.x;
       Rbc.y=posC.y-posB.y;
       Rbc.z=posC.z-posB.z;
       Rbc=ApplyBoundaryCondition(Rbc);
       vec_v=Rbc;
       rbc=sqrt(SQR(Rbc.x)+SQR(Rbc.y)+SQR(Rbc.z));
-      v=rbc;
-      Rbc.x/=rbc;
-      Rbc.y/=rbc;
-      Rbc.z/=rbc;
+      v=rbc;      
 
-      Rac.x=posC.x-posA.x;
-      Rac.y=posC.y-posA.y;
-      Rac.z=posC.z-posA.z;
-      Rac=ApplyBoundaryCondition(Rac);
+      Rac.x=Rbc.x-Rab.x;
+      Rac.y=Rbc.y-Rab.y;
+      Rac.z=Rbc.z-Rab.z;
       rac=sqrt(SQR(Rac.x)+SQR(Rac.y)+SQR(Rac.z));
       Rac.x/=rac;
       Rac.y/=rac;
       Rac.z/=rac;
 
-      CosTheta=(Rab.x*Rbc.x+Rab.y*Rbc.y+Rab.z*Rbc.z);
+      Rab.x/=rab;
+      Rab.y/=rab;
+      Rab.z/=rab;
+
+      Rbc.x/=rbc;
+      Rbc.y/=rbc;
+      Rbc.z/=rbc;
+
+      CosTheta=MAX2(MIN2(Rab.x*Rbc.x+Rab.y*Rbc.y+Rab.z*Rbc.z,1.0),-1.0);
       Theta=acos(CosTheta);
       SinTheta=MAX2((REAL)1.0e-8,sqrt(1.0-SQR(CosTheta)));
       DTDX=-1.0/SinTheta;
@@ -3777,6 +3777,35 @@ void ComputeFrameworkBendHessian(REAL *Energy,REAL* Gradient,REAL_MATRIX Hessian
           U=0.5*parms[0]*SQR(temp);
           DF=parms[0]*temp*DTDX;
           DDF=parms[0]*SQR(DTDX)+parms[0]*temp*CosTheta*CUBE(DTDX);
+          break;
+        case MANZ_BEND:
+          // 2*(cos(Theta) - cos(parms[1]))^2/(sin(Theta)^2 + 3*sin(parms[1])^2*(tanh(2*sin(parms[1]/2))/tanh(2*sin(Theta/2))))
+          // Use equivalent function re-expressed using only the cosine functions to save computational cost.
+          // ===============================================
+          // parms[0] angle-bending force constant
+          // parms[1] equilibrium angle in radians
+          if ((fabs(parms[1] - M_PI) + fabs(Theta - M_PI)) < 1e-6) {
+            U = 0;
+            DF=parms[0];
+            DDF=0;
+          } else {
+            CosPar1 = cos(parms[1]);
+            SQRCosPar1 = SQR(CosPar1);
+            SQRCosTheta = SQR(CosTheta);
+            p_Theta = sqrt(2*(1.0 - CosTheta));
+            p_Par1 = sqrt(2*(1.0 - CosPar1));
+            temp = tanh(p_Theta);
+            temp2 = tanh(p_Par1);
+            temp3 = CosTheta - CosPar1;
+            w_Theta = 1 - SQRCosTheta + 3*(1-SQRCosPar1)*(temp/temp2);
+            temp_G = (2*SQR(temp3))/w_Theta;
+            U = parms[0]*temp_G;
+            miu_Theta = -3*((1-SQRCosPar1)/p_Theta)*((1-SQR(temp))/temp2);
+            DwDcosTheta = -2*CosTheta + miu_Theta;
+            DDwDcosTheta = -2 + ((miu_Theta)/(p_Theta))*(2*temp+(1/SQR(p_Theta)));
+            DF=(parms[0]/w_Theta)*((4*temp3) - (temp_G*DwDcosTheta));
+            DDF= (parms[0]/w_Theta)*(4 - (2*DF*DwDcosTheta) - (temp_G*DDwDcosTheta));
+          }
           break;
         case CORE_SHELL_BEND:
           // (1/2)p_0*(theta-p_1)^2
@@ -4143,11 +4172,23 @@ void ComputeFrameworkTorsionHessian(REAL *Energy,REAL* Gradient,REAL_MATRIX Hess
 {
   int i,A,B,C,D,f1;
   POINT posA,posB,posC,posD;
-  REAL d,e,rbc;
+  REAL d,e,rbc,rab,rcd;
   VECTOR Dab,Dcb,Ddc,dr,ds;
   REAL dot_ab,dot_cd,r,s,sign;
-  REAL U,CosPhi,Phi,CosPhi2,SinPhi;
+  REAL r_cross_wu_cross_vu,r_wu;
+  VECTOR cross_wu,cross_vu,cross_wu_cross_vu;
+  REAL U,CosPhi,Phi,CosPhi2,SinPhi,Theta_abc,Theta_bcd,CosTheta_abc,CosTheta_bcd;
   REAL ShiftedCosPhi,ShiftedCosPhi2,ShiftedSinPhi;
+  VECTOR Rvec_ba,Rvec_bc,Rvec_cd,Rvec_ac,Rvec_bd,W_1_vec,W_2_vec,W_1_hat,W_2_hat,Rhat_ba,Rhat_bc,Rhat_cd;
+  VECTOR temp_cross1,temp_cross2,gradphi_A,gradphi_B,gradphi_C,gradphi_D;
+  REAL W_1,W_2,temp,dUdphi,d2Udphi,d2U_cos,d2U_sin,pow2_SinPhi,pow3_SinPhi;
+  REAL SindelPhi,CosdelPhi,Sin2delPhi,Cos2delPhi,Sin3delPhi,Cos3delPhi,Sin4delPhi,Cos4delPhi;
+  REAL temp_coef1,temp_coef2,temp_coef3,temp_coef4,U_cos,dU_cos,U_sin,dU_sin;
+  REAL cht_1,cht_2,cht_eq_1,cht_eq_2;
+  REAL pow2_cht_1,pow2_cht_2,pow2_cht_eq_1,pow2_cht_eq_2,pow3_cht_1,pow3_cht_2,pow3_cht_eq_1,pow3_cht_eq_2;
+  REAL P1_1,P1_2,P2_1,P2_2,P3_1,P3_2,P4_1,P4_2;
+  REAL P1_eq_1,P1_eq_2,P2_eq_1,P2_eq_2,P3_eq_1,P3_eq_2,P4_eq_1,P4_eq_2;
+  REAL fp1,fp2,fp3,fp4,fp1_eq,fp2_eq,fp3_eq,fp4_eq;
   VECTOR dtA,dtB,dtC,dtD,Pb,Pc;
   REAL *parms;
   INT_VECTOR3 index_i,index_j,index_k,index_l;
@@ -4159,7 +4200,6 @@ void ComputeFrameworkTorsionHessian(REAL *Energy,REAL* Gradient,REAL_MATRIX Hess
   VECTOR vec_u,vec_v,vec_w;
   REAL u,w,v;
   VECTOR fa,fb,fc,fd;
-
   for(f1=0;f1<Framework[CurrentSystem].NumberOfFrameworks;f1++)
   {
     for(i=0;i<Framework[CurrentSystem].NumberOfTorsions[f1];i++)
@@ -4203,6 +4243,39 @@ void ComputeFrameworkTorsionHessian(REAL *Energy,REAL* Gradient,REAL_MATRIX Hess
       vec_w=ApplyBoundaryCondition(vec_w);
       w=sqrt(SQR(vec_w.x)+SQR(vec_w.y)+SQR(vec_w.z));
 
+      cross_wu.x = vec_w.y * vec_u.z - vec_w.z * vec_u.y;
+      cross_wu.y = vec_w.z * vec_u.x - vec_w.x * vec_u.z;
+      cross_wu.z = vec_w.x * vec_u.y - vec_w.y * vec_u.x;
+
+      cross_vu.x = vec_v.y * vec_u.z - vec_v.z * vec_u.y;
+      cross_vu.y = vec_v.z * vec_u.x - vec_v.x * vec_u.z;
+      cross_vu.z = vec_v.x * vec_u.y - vec_v.y * vec_u.x;
+
+      cross_wu_cross_vu.x = cross_wu.y * cross_vu.z - cross_wu.z * cross_vu.y;
+      cross_wu_cross_vu.x = cross_wu.z * cross_vu.x - cross_wu.x * cross_vu.z;
+      cross_wu_cross_vu.x = cross_wu.x * cross_vu.y - cross_wu.y * cross_vu.x;
+
+      r_cross_wu_cross_vu = sqrt(SQR(cross_wu_cross_vu.x)+SQR(cross_wu_cross_vu.y)+SQR(cross_wu_cross_vu.z));
+
+      if (r_cross_wu_cross_vu<1e-6){
+        r_wu=sqrt(SQR(cross_wu.x)+SQR(cross_wu.y)+SQR(cross_wu.z));
+        if (r_wu>1e-6){
+          posD.x += (1.0e-5)*cross_wu.x; posD.y += (1.0e-5)*cross_wu.y; posD.z += (1.0e-5)*cross_wu.z;
+          vec_v.x=posD.x-posC.x;
+          vec_v.y=posD.y-posC.y;
+          vec_v.z=posD.z-posC.z;
+          vec_v=ApplyBoundaryCondition(vec_v);
+          v=sqrt(SQR(vec_v.x)+SQR(vec_v.y)+SQR(vec_v.z));
+        }else{
+          posA.x += (1.0e-5)*cross_vu.x; posA.y += (1.0e-5)*cross_vu.y; posA.z += (1.0e-5)*cross_vu.z;
+          vec_w.x=posA.x-posB.x;
+          vec_w.y=posA.y-posB.y;
+          vec_w.z=posA.z-posB.z;
+          vec_w=ApplyBoundaryCondition(vec_w);
+          w=sqrt(SQR(vec_w.x)+SQR(vec_w.y)+SQR(vec_w.z));          
+        }
+      }
+
       Dab.x=posA.x-posB.x;
       Dab.y=posA.y-posB.y;
       Dab.z=posA.z-posB.z;
@@ -4227,13 +4300,17 @@ void ComputeFrameworkTorsionHessian(REAL *Energy,REAL* Gradient,REAL_MATRIX Hess
       dr.y=Dab.y-dot_ab*Dcb.y;
       dr.z=Dab.z-dot_ab*Dcb.z;
       r=sqrt(SQR(dr.x)+SQR(dr.y)+SQR(dr.z));
-      dr.x/=r; dr.y/=r; dr.z/=r;
+      if (r!=0.0){
+        dr.x/=r; dr.y/=r; dr.z/=r;
+      }
 
       ds.x=Ddc.x-dot_cd*Dcb.x;
       ds.y=Ddc.y-dot_cd*Dcb.y;
       ds.z=Ddc.z-dot_cd*Dcb.z;
       s=sqrt(SQR(ds.x)+SQR(ds.y)+SQR(ds.z));
-      ds.x/=s; ds.y/=s; ds.z/=s;
+      if (s!=0.0){
+        ds.x/=s; ds.y/=s; ds.z/=s;
+      }
 
       // compute Cos(Phi)
       // Phi is defined in protein convention Phi(trans)=Pi
@@ -4427,6 +4504,260 @@ void ComputeFrameworkTorsionHessian(REAL *Energy,REAL* Gradient,REAL_MATRIX Hess
             DF=(parms[0]*parms[1]*sin(parms[1]*Phi-parms[2]))/SinPhi;
           DDF=-parms[0]*parms[1]*(parms[1]*cos(-parms[1]*Phi+parms[2])+sin(-parms[1]*Phi+parms[2])*CosPhi/SinPhi)/SQR(SinPhi);
           break;
+        case CADT_MODE_ONE_ONLY:
+          // p_0*(1-cos(phi-p_1))
+          // ========================
+          // parms[0]  equilibrium dihedral value
+          // parms[1]  dihedral torsion force constant 
+          //
+          // the sign of the angle-phi is positive if (Rab x Rbc) x (Rbc x Rcd) is in the
+          // same direction as Dbc, and negative otherwise
+          Pb.x=Dab.z*Dcb.y-Dab.y*Dcb.z;
+          Pb.y=Dab.x*Dcb.z-Dab.z*Dcb.x;
+          Pb.z=Dab.y*Dcb.x-Dab.x*Dcb.y;
+          Pc.x=Dcb.y*Ddc.z-Dcb.z*Ddc.y;
+          Pc.y=Dcb.z*Ddc.x-Dcb.x*Ddc.z;
+          Pc.z=Dcb.x*Ddc.y-Dcb.y*Ddc.x;
+          temp=(Dcb.x*(Pc.z*Pb.y-Pc.y*Pb.z)+Dcb.y*(Pb.z*Pc.x-Pb.x*Pc.z)
+                +Dcb.z*(Pc.y*Pb.x-Pc.x*Pb.y));
+          if (temp>=0) {
+            Phi=acos(CosPhi);
+          } else {
+            Phi=-acos(CosPhi);
+          }
+          SinPhi=sin(Phi);
+          CosPhi=cos(Phi);
+          pow2_SinPhi = SinPhi*SinPhi;
+          pow3_SinPhi = SinPhi*SinPhi*SinPhi;
+          U=parms[1]*(1.0-cos(Phi-parms[0]));
+          dUdphi = parms[1]*sin(Phi-parms[0]);
+          d2Udphi = parms[1]*cos(Phi-parms[0]);
+          DF= -dUdphi/SinPhi;
+          DDF= (d2Udphi/pow2_SinPhi) - ((CosPhi)*(dUdphi)/pow3_SinPhi);
+          break;
+        case CADT_DIHEDRAL:
+          // parms[0]  equilibrium dihedral value
+          // parms[1] to parms[7] are force constants for torsion modes 1 to 7, respectively
+          // the sign of the angle-phi is positive if (Rab x Rbc) x (Rbc x Rcd) is in the
+          // same direction as Dbc, and negative otherwise
+          Pb.x=Dab.z*Dcb.y-Dab.y*Dcb.z;
+          Pb.y=Dab.x*Dcb.z-Dab.z*Dcb.x;
+          Pb.z=Dab.y*Dcb.x-Dab.x*Dcb.y;
+          Pc.x=Dcb.y*Ddc.z-Dcb.z*Ddc.y;
+          Pc.y=Dcb.z*Ddc.x-Dcb.x*Ddc.z;
+          Pc.z=Dcb.x*Ddc.y-Dcb.y*Ddc.x;
+          temp=(Dcb.x*(Pc.z*Pb.y-Pc.y*Pb.z)+Dcb.y*(Pb.z*Pc.x-Pb.x*Pc.z)
+                +Dcb.z*(Pc.y*Pb.x-Pc.x*Pb.y));
+          if (temp>=0) {
+            Phi=acos(CosPhi);
+          } else {
+            Phi=-acos(CosPhi);
+          }
+
+          SinPhi=sin(Phi);
+          CosPhi=cos(Phi);
+          pow2_SinPhi = SinPhi*SinPhi;
+          pow3_SinPhi = SinPhi*SinPhi*SinPhi;
+
+          SindelPhi=sin(Phi-parms[0]);
+          CosdelPhi=cos(Phi-parms[0]);
+          Sin2delPhi=sin(2*(Phi-parms[0]));
+          Cos2delPhi=cos(2*(Phi-parms[0]));
+          Sin3delPhi=sin(3*(Phi-parms[0]));
+          Cos3delPhi=cos(3*(Phi-parms[0]));
+          Sin4delPhi=sin(4*(Phi-parms[0]));
+          Cos4delPhi=cos(4*(Phi-parms[0]));
+          
+          temp_coef1 = 3*const1over_sqrt10*parms[5] + const1over_sqrt15*parms[7];
+          temp_coef2 = 2*const1over_sqrt5*parms[6] - const1over_sqrt15*parms[7];
+          temp_coef3 = -1*const1over_sqrt10*parms[5] + 3*const1over_sqrt15*parms[7];
+          temp_coef4 = -1*const1over_sqrt5*parms[6] - 2*const1over_sqrt15*parms[7];
+
+          U_cos = parms[1]*(1.0-CosdelPhi) + parms[2]*(1.0-Cos2delPhi) + parms[3]*(1.0-Cos3delPhi) + parms[4]*(1.0-Cos4delPhi);
+          dU_cos = parms[1]*SindelPhi + 2*parms[2]*Sin2delPhi + 3*parms[3]*Sin3delPhi + 4*parms[4]*Sin4delPhi;
+          d2U_cos = parms[1]*CosdelPhi + 4*parms[2]*Cos2delPhi + 9*parms[3]*Cos3delPhi + 16*parms[4]*Cos4delPhi;
+
+          U_sin = temp_coef1*SindelPhi + temp_coef2*Sin2delPhi + temp_coef3*Sin3delPhi + temp_coef4*Sin4delPhi;
+          dU_sin = temp_coef1*CosdelPhi + 2*temp_coef2*Cos2delPhi + 3*temp_coef3*Cos3delPhi + 4*temp_coef4*Cos4delPhi;
+          d2U_sin = -temp_coef1*SindelPhi - 4*temp_coef2*Sin2delPhi - 9*temp_coef3*Sin3delPhi - 16*temp_coef4*Sin4delPhi;
+
+          U = U_cos + U_sin;
+          dUdphi = dU_cos + dU_sin;
+          d2Udphi = d2U_cos + d2U_sin;
+          DF= -dUdphi/SinPhi;
+          DDF= (d2Udphi/pow2_SinPhi) - ((CosPhi)*(dUdphi)/pow3_SinPhi);
+          break;
+        case ADDT_MODE_ONE_ONLY:
+          Rvec_ba.x = posA.x-posB.x;
+          Rvec_ba.y = posA.y-posB.y;
+          Rvec_ba.z = posA.z-posB.z;
+          Rvec_ba = ApplyBoundaryCondition(Rvec_ba);
+          rab = sqrt(SQR(Rvec_ba.x)+SQR(Rvec_ba.y)+SQR(Rvec_ba.z));
+          Rhat_ba.x/=rab; Rhat_ba.y/=rab; Rhat_ba.z/=rab; 
+
+          Rvec_bc.x = posC.x-posB.x;
+          Rvec_bc.y = posC.y-posB.y;
+          Rvec_bc.z = posC.z-posB.z;
+          Rvec_bc = ApplyBoundaryCondition(Rvec_bc);
+          rbc = sqrt(SQR(Rvec_bc.x)+SQR(Rvec_bc.y)+SQR(Rvec_bc.z));
+          Rhat_bc.x/=rbc; Rhat_bc.y/=rbc; Rhat_bc.z/=rbc;
+
+          Rvec_cd.x = posD.x-posC.x;
+          Rvec_cd.y = posD.y-posC.y;
+          Rvec_cd.z = posD.z-posC.z;
+          Rvec_cd = ApplyBoundaryCondition(Rvec_cd);
+          rcd = sqrt(SQR(Rvec_cd.x)+SQR(Rvec_cd.y)+SQR(Rvec_cd.z));
+          Rhat_cd.x/=rcd; Rhat_cd.y/=rcd; Rhat_cd.z/=rcd;
+
+          CosTheta_abc=MAX2(MIN2(Rhat_ba.x*Rhat_bc.x+Rhat_ba.y*Rhat_bc.y+Rhat_ba.z*Rhat_bc.z,1.0),-1.0);
+          Theta_abc=acos(CosTheta_abc);
+          CosTheta_bcd=MAX2(MIN2((-Rhat_bc.x)*Rhat_cd.x+(-Rhat_bc.y)*Rhat_cd.y+(-Rhat_bc.z)*Rhat_cd.z,1.0),-1.0);
+          Theta_bcd=acos(CosTheta_bcd);
+
+          Pb.x=Dab.z*Dcb.y-Dab.y*Dcb.z;
+          Pb.y=Dab.x*Dcb.z-Dab.z*Dcb.x;
+          Pb.z=Dab.y*Dcb.x-Dab.x*Dcb.y;
+          Pc.x=Dcb.y*Ddc.z-Dcb.z*Ddc.y;
+          Pc.y=Dcb.z*Ddc.x-Dcb.x*Ddc.z;
+          Pc.z=Dcb.x*Ddc.y-Dcb.y*Ddc.x;
+          temp=(Dcb.x*(Pc.z*Pb.y-Pc.y*Pb.z)+Dcb.y*(Pb.z*Pc.x-Pb.x*Pc.z)
+                +Dcb.z*(Pc.y*Pb.x-Pc.x*Pb.y));
+          if (temp>=0) {
+            Phi=acos(CosPhi);
+          } else {
+            Phi=-acos(CosPhi);
+          }
+          CosdelPhi=cos(Phi-parms[0]);
+          cht_1=cos(Theta_abc/2);
+          cht_2=cos(Theta_bcd/2);
+          cht_eq_1=cos(parms[2]/2);
+          cht_eq_2=cos(parms[3]/2);
+          pow3_cht_1 = cht_1*cht_1*cht_1;
+          pow3_cht_2 = cht_2*cht_2*cht_2;
+          pow3_cht_eq_1 = cht_eq_1*cht_eq_1*cht_eq_1;
+          pow3_cht_eq_2 = cht_eq_2*cht_eq_2*cht_eq_2;
+          P1_1=(cht_1 + 3*pow3_cht_1)/4;
+          P1_2=(cht_2 + 3*pow3_cht_2)/4;
+          P1_eq_1=(cht_eq_1 + 3*pow3_cht_eq_1)/4;
+          P1_eq_2=(cht_eq_2 + 3*pow3_cht_eq_2)/4;
+          fp1 = tanh(ADDT_K*P1_1)*tanh(ADDT_K*P1_2)/(ADDT_tanh_K_squared);
+          fp1_eq = tanh(ADDT_K*P1_eq_1)*tanh(ADDT_K*P1_eq_2)/(ADDT_tanh_K_squared);
+          U = parms[1]*((1/2)*(((fp1/fp1_eq)-1)*((fp1/fp1_eq)-1)) + (fp1/fp1_eq)*(1-CosdelPhi));
+          DF=0.0;
+          DDF=0.0;
+          break;
+        case ADDT_DIHEDRAL:
+          Rvec_ba.x = posA.x-posB.x;
+          Rvec_ba.y = posA.y-posB.y;
+          Rvec_ba.z = posA.z-posB.z;
+          Rvec_ba = ApplyBoundaryCondition(Rvec_ba);
+          rab = sqrt(SQR(Rvec_ba.x)+SQR(Rvec_ba.y)+SQR(Rvec_ba.z));
+          Rhat_ba.x/=rab; Rhat_ba.y/=rab; Rhat_ba.z/=rab; 
+
+          Rvec_bc.x = posC.x-posB.x;
+          Rvec_bc.y = posC.y-posB.y;
+          Rvec_bc.z = posC.z-posB.z;
+          Rvec_bc = ApplyBoundaryCondition(Rvec_bc);
+          rbc = sqrt(SQR(Rvec_bc.x)+SQR(Rvec_bc.y)+SQR(Rvec_bc.z));
+          Rhat_bc.x/=rbc; Rhat_bc.y/=rbc; Rhat_bc.z/=rbc;
+
+          Rvec_cd.x = posD.x-posC.x;
+          Rvec_cd.y = posD.y-posC.y;
+          Rvec_cd.z = posD.z-posC.z;
+          Rvec_cd = ApplyBoundaryCondition(Rvec_cd);
+          rcd = sqrt(SQR(Rvec_cd.x)+SQR(Rvec_cd.y)+SQR(Rvec_cd.z));
+          Rhat_cd.x/=rcd; Rhat_cd.y/=rcd; Rhat_cd.z/=rcd;
+
+          CosTheta_abc=MAX2(MIN2(Rhat_ba.x*Rhat_bc.x+Rhat_ba.y*Rhat_bc.y+Rhat_ba.z*Rhat_bc.z,1.0),-1.0);
+          Theta_abc=acos(CosTheta_abc);
+          CosTheta_bcd=MAX2(MIN2((-Rhat_bc.x)*Rhat_cd.x+(-Rhat_bc.y)*Rhat_cd.y+(-Rhat_bc.z)*Rhat_cd.z,1.0),-1.0);
+          Theta_bcd=acos(CosTheta_bcd);
+
+          Pb.x=Dab.z*Dcb.y-Dab.y*Dcb.z;
+          Pb.y=Dab.x*Dcb.z-Dab.z*Dcb.x;
+          Pb.z=Dab.y*Dcb.x-Dab.x*Dcb.y;
+          Pc.x=Dcb.y*Ddc.z-Dcb.z*Ddc.y;
+          Pc.y=Dcb.z*Ddc.x-Dcb.x*Ddc.z;
+          Pc.z=Dcb.x*Ddc.y-Dcb.y*Ddc.x;
+          temp=(Dcb.x*(Pc.z*Pb.y-Pc.y*Pb.z)+Dcb.y*(Pb.z*Pc.x-Pb.x*Pc.z)
+                +Dcb.z*(Pc.y*Pb.x-Pc.x*Pb.y));
+          if (temp>=0) {
+            Phi=acos(CosPhi);
+          } else {
+            Phi=-acos(CosPhi);
+          }
+          CosdelPhi=cos(Phi-parms[0]);
+          SindelPhi=sin(Phi-parms[0]);
+          Sin2delPhi=sin(2*(Phi-parms[0]));
+          Sin3delPhi=sin(3*(Phi-parms[0]));
+          Sin4delPhi=sin(4*(Phi-parms[0]));
+          cht_1=cos(Theta_abc/2);
+          cht_2=cos(Theta_bcd/2);
+          cht_eq_1=cos(parms[8]/2);
+          cht_eq_2=cos(parms[9]/2);
+
+          pow2_cht_1 = cht_1*cht_1;
+          pow2_cht_2 = cht_2*cht_2;
+          pow2_cht_eq_1 = cht_eq_1*cht_eq_1;
+          pow2_cht_eq_2 = cht_eq_2*cht_eq_2;
+          pow3_cht_1 = cht_1*cht_1*cht_1;
+          pow3_cht_2 = cht_2*cht_2*cht_2;
+          pow3_cht_eq_1 = cht_eq_1*cht_eq_1*cht_eq_1;
+          pow3_cht_eq_2 = cht_eq_2*cht_eq_2*cht_eq_2;
+
+          P1_1 = (cht_1 + 3*pow3_cht_1)/4;
+          P1_2 = (cht_2 + 3*pow3_cht_2)/4;
+          P2_1 = (3*pow2_cht_1 + pow3_cht_1*cht_1)/4;
+          P2_2 = (3*pow2_cht_2 + pow3_cht_2*cht_2)/4;
+          P3_1 = (6*pow3_cht_1 - 3*(pow3_cht_1*pow2_cht_1) + (pow3_cht_1*pow3_cht_1*cht_1))/4;
+          P3_2 = (6*pow3_cht_2 - 3*(pow3_cht_2*pow2_cht_2) + (pow3_cht_2*pow3_cht_2*cht_2))/4;   
+          P4_1 = (10*(pow3_cht_1*cht_1) - 9*(pow3_cht_1*pow3_cht_1) + 3*(pow3_cht_1*pow3_cht_1*pow2_cht_1))/4;
+          P4_2 = (10*(pow3_cht_2*cht_2) - 9*(pow3_cht_2*pow3_cht_2) + 3*(pow3_cht_2*pow3_cht_2*pow2_cht_2))/4;
+
+          P1_eq_1 = (cht_eq_1 + 3*pow3_cht_eq_1)/4;
+          P1_eq_2 = (cht_eq_2 + 3*pow3_cht_eq_2)/4;
+          P2_eq_1 = (3*pow2_cht_eq_1 + pow3_cht_eq_1*cht_eq_1)/4;
+          P2_eq_2 = (3*pow2_cht_eq_2 + pow3_cht_eq_2*cht_eq_2)/4;
+          P3_eq_1 = (6*pow3_cht_eq_1 - 3*(pow3_cht_eq_1*pow2_cht_eq_1) + (pow3_cht_eq_1*pow3_cht_eq_1*cht_eq_1))/4;
+          P3_eq_2 = (6*pow3_cht_eq_2 - 3*(pow3_cht_eq_2*pow2_cht_eq_2) + (pow3_cht_eq_2*pow3_cht_eq_2*cht_eq_2))/4;   
+          P4_eq_1 = (10*(pow3_cht_eq_1*cht_eq_1) - 9*(pow3_cht_eq_1*pow3_cht_eq_1) + 3*(pow3_cht_eq_1*pow3_cht_eq_1*pow2_cht_eq_1))/4;
+          P4_eq_2 = (10*(pow3_cht_eq_2*cht_eq_2) - 9*(pow3_cht_eq_2*pow3_cht_eq_2) + 3*(pow3_cht_eq_2*pow3_cht_eq_2*pow2_cht_eq_2))/4;
+
+          fp1 = tanh(ADDT_K*P1_1)*tanh(ADDT_K*P1_2)/(ADDT_tanh_K_squared);
+          fp2 = tanh(ADDT_K*P2_1)*tanh(ADDT_K*P2_2)/(ADDT_tanh_K_squared);
+          fp3 = tanh(ADDT_K*P3_1)*tanh(ADDT_K*P3_2)/(ADDT_tanh_K_squared);
+          fp4 = tanh(ADDT_K*P4_1)*tanh(ADDT_K*P4_2)/(ADDT_tanh_K_squared);
+
+          fp1_eq = tanh(ADDT_K*P1_eq_1)*tanh(ADDT_K*P1_eq_2)/(ADDT_tanh_K_squared);
+          fp2_eq = tanh(ADDT_K*P2_eq_1)*tanh(ADDT_K*P2_eq_2)/(ADDT_tanh_K_squared);
+          fp3_eq = tanh(ADDT_K*P3_eq_1)*tanh(ADDT_K*P3_eq_2)/(ADDT_tanh_K_squared);
+          fp4_eq = tanh(ADDT_K*P4_eq_1)*tanh(ADDT_K*P4_eq_2)/(ADDT_tanh_K_squared);
+
+          U = 0;
+          if (parms[1] != 0.0) {
+            U += parms[1]*((1/2)*(((fp1/fp1_eq)-1)*((fp1/fp1_eq)-1)) + (fp1/fp1_eq)*(1-CosdelPhi));
+          }
+          if (parms[2] != 0.0) {
+            U += parms[2]*((1/2)*(((fp2/fp1_eq)-(fp2_eq/fp1_eq))*((fp2/fp1_eq)-(fp2_eq/fp1_eq))) + (fp2/fp2_eq)*(1-cos(2*(Phi-parms[0]))));
+          }
+          if (parms[3] != 0.0) {
+            U += parms[3]*((1/2)*(((fp3/fp1_eq)-(fp3_eq/fp1_eq))*((fp3/fp1_eq)-(fp3_eq/fp1_eq))) + (fp3/fp3_eq)*(1-cos(3*(Phi-parms[0]))));
+          }
+          if (parms[4] != 0.0) {
+            U += parms[4]*((1/2)*(((fp4/fp1_eq)-(fp4_eq/fp1_eq))*((fp4/fp1_eq)-(fp4_eq/fp1_eq))) + (fp4/fp4_eq)*(1-cos(4*(Phi-parms[0]))));
+          }
+          if (parms[5] != 0.0) {
+            U += parms[5]*(3*SindelPhi*(fp1/fp1_eq) - Sin3delPhi*(fp3/fp3_eq))*const1over_sqrt10;
+          }
+          if (parms[6] != 0.0) {
+            U += parms[6]*(2*Sin2delPhi*(fp2/fp2_eq) - Sin4delPhi*(fp4/fp4_eq))*const1over_sqrt5;
+          }
+          if (parms[7] != 0.0) {
+            U += parms[7]*((SindelPhi*(fp1/fp1_eq) + 3*Sin3delPhi*(fp3/fp3_eq)) - (Sin2delPhi*(fp2/fp2_eq) + 2*Sin4delPhi*(fp4/fp4_eq)))*const1over_sqrt15;
+          }
+          DF=0.0;
+          DDF=0.0;
+          break;
         case OPLS_DIHEDRAL:
           // (1/2)p_0[0]+(1/2)p_1*(1+cos(phi))+(1/2)p_2*(1-cos(2*phi))+(1/2)p_3*(1+cos(3*phi))
           // =================================================================================
@@ -4484,44 +4815,127 @@ void ComputeFrameworkTorsionHessian(REAL *Energy,REAL* Gradient,REAL_MATRIX Hess
       *Energy+=U;
 
       //if((index_i<0)&&(index_j<0)&&(index_k<0)&&(index_l<0)) continue;
+      if (Framework[CurrentSystem].TorsionType[f1][i] == ADDT_MODE_ONE_ONLY || Framework[CurrentSystem].TorsionType[f1][i] == ADDT_DIHEDRAL){
+        Rvec_ba.x = posA.x-posB.x;
+        Rvec_ba.y = posA.y-posB.y;
+        Rvec_ba.z = posA.z-posB.z;
+        Rvec_ba = ApplyBoundaryCondition(Rvec_ba);
 
-     // Calculate the first derivative vectors.
-      d=dot_ab/rbc;
-      e=dot_cd/rbc;
+        Rvec_bc.x = posC.x-posB.x;
+        Rvec_bc.y = posC.y-posB.y;
+        Rvec_bc.z = posC.z-posB.z;
+        Rvec_bc = ApplyBoundaryCondition(Rvec_bc);
+        rbc = sqrt(SQR(Rvec_bc.x)+SQR(Rvec_bc.y)+SQR(Rvec_bc.z));
 
-      dtA.x=(ds.x-CosPhi*dr.x)/r;
-      dtA.y=(ds.y-CosPhi*dr.y)/r;
-      dtA.z=(ds.z-CosPhi*dr.z)/r;
+        Rvec_cd.x = posD.x-posC.x;
+        Rvec_cd.y = posD.y-posC.y;
+        Rvec_cd.z = posD.z-posC.z;
+        Rvec_cd = ApplyBoundaryCondition(Rvec_cd);
+        
+        Rvec_ac.x = -Rvec_ba.x + Rvec_bc.x;
+        Rvec_ac.y = -Rvec_ba.y + Rvec_bc.y;
+        Rvec_ac.z = -Rvec_ba.z + Rvec_bc.z;
 
-      dtD.x=(dr.x-CosPhi*ds.x)/s;
-      dtD.y=(dr.y-CosPhi*ds.y)/s;
-      dtD.z=(dr.z-CosPhi*ds.z)/s;
+        Rvec_bd.x = Rvec_cd.x + Rvec_bc.x;
+        Rvec_bd.y = Rvec_cd.y + Rvec_bc.y;
+        Rvec_bd.z = Rvec_cd.z + Rvec_bc.z;
 
-      dtB.x=dtA.x*(d-1.0)+e*dtD.x;
-      dtB.y=dtA.y*(d-1.0)+e*dtD.y;
-      dtB.z=dtA.z*(d-1.0)+e*dtD.z;
+        W_1_vec.x = -(Rvec_cd.y*Rvec_bc.z - Rvec_cd.z*Rvec_bc.y);
+        W_1_vec.y = -(Rvec_cd.z*Rvec_bc.x - Rvec_cd.x*Rvec_bc.z);
+        W_1_vec.z = -(Rvec_cd.x*Rvec_bc.y - Rvec_cd.y*Rvec_bc.x);
+        W_2_vec.x = Rvec_ba.y*Rvec_bc.z - Rvec_ba.z*Rvec_bc.y;
+        W_2_vec.y = Rvec_ba.z*Rvec_bc.x - Rvec_ba.x*Rvec_bc.z;
+        W_2_vec.z = Rvec_ba.x*Rvec_bc.y - Rvec_ba.y*Rvec_bc.x;
 
-      dtC.x=-dtD.x*(e+1.0)-d*dtA.x;
-      dtC.y=-dtD.y*(e+1.0)-d*dtA.y;
-      dtC.z=-dtD.z*(e+1.0)-d*dtA.z;
+        W_1 = sqrt(SQR(W_1_vec.x)+SQR(W_1_vec.y)+SQR(W_1_vec.z));
+        W_2 = sqrt(SQR(W_2_vec.x)+SQR(W_2_vec.y)+SQR(W_2_vec.z));
+
+        W_1_hat.x = W_1_vec.x/W_1;
+        W_1_hat.y = W_1_vec.y/W_1;
+        W_1_hat.z = W_1_vec.z/W_1;
+
+        W_2_hat.x = W_2_vec.x/W_2;
+        W_2_hat.y = W_2_vec.y/W_2;
+        W_2_hat.z = W_2_vec.z/W_2;
+
+        temp_cross1.x= (W_2_hat.y*Rvec_bc.z - W_2_hat.z*Rvec_bc.y)/(W_2*rbc);
+        temp_cross1.y= (W_2_hat.z*Rvec_bc.x - W_2_hat.x*Rvec_bc.z)/(W_2*rbc);
+        temp_cross1.z= (W_2_hat.x*Rvec_bc.y - W_2_hat.y*Rvec_bc.x)/(W_2*rbc);
+
+        temp_cross2.x= (W_1_hat.y*Rvec_bc.z - W_1_hat.z*Rvec_bc.y)/(W_1*rbc);
+        temp_cross2.y= (W_1_hat.z*Rvec_bc.x - W_1_hat.x*Rvec_bc.z)/(W_1*rbc);
+        temp_cross2.z= (W_1_hat.x*Rvec_bc.y - W_1_hat.y*Rvec_bc.x)/(W_1*rbc);
+
+        gradphi_A.x = Rvec_bc.y*temp_cross1.z - Rvec_bc.z*temp_cross1.y;
+        gradphi_A.y = Rvec_bc.z*temp_cross1.x - Rvec_bc.x*temp_cross1.z;
+        gradphi_A.z = Rvec_bc.x*temp_cross1.y - Rvec_bc.y*temp_cross1.x;
+
+        gradphi_B.x = -(Rvec_ac.y*temp_cross1.z - Rvec_ac.z*temp_cross1.y) + (Rvec_cd.y*temp_cross2.z - Rvec_cd.z*temp_cross2.y);
+        gradphi_B.y = -(Rvec_ac.z*temp_cross1.x - Rvec_ac.x*temp_cross1.z) + (Rvec_cd.z*temp_cross2.x - Rvec_cd.x*temp_cross2.z);
+        gradphi_B.z = -(Rvec_ac.x*temp_cross1.y - Rvec_ac.y*temp_cross1.x) + (Rvec_cd.x*temp_cross2.y - Rvec_cd.y*temp_cross2.x);
+
+        gradphi_C.x = -(Rvec_ba.y*temp_cross1.z - Rvec_ba.z*temp_cross1.y) - (Rvec_bd.y*temp_cross2.z - Rvec_bd.z*temp_cross2.y);
+        gradphi_C.y = -(Rvec_ba.z*temp_cross1.x - Rvec_ba.x*temp_cross1.z) - (Rvec_bd.z*temp_cross2.x - Rvec_bd.x*temp_cross2.z);
+        gradphi_C.z = -(Rvec_ba.x*temp_cross1.y - Rvec_ba.y*temp_cross1.x) - (Rvec_bd.x*temp_cross2.y - Rvec_bd.y*temp_cross2.x);
+
+        gradphi_D.x = Rvec_bc.y*temp_cross2.z - Rvec_bc.z*temp_cross2.y;
+        gradphi_D.y = Rvec_bc.z*temp_cross2.x - Rvec_bc.x*temp_cross2.z;
+        gradphi_D.z = Rvec_bc.x*temp_cross2.y - Rvec_bc.y*temp_cross2.x;
+      }
 
       // forces are oppositely directed to the gradient
-      fa.x=DF*dtA.x;
-      fa.y=DF*dtA.y;
-      fa.z=DF*dtA.z;
+      if (Framework[CurrentSystem].TorsionType[f1][i] == ADDT_MODE_ONE_ONLY || Framework[CurrentSystem].TorsionType[f1][i] == ADDT_DIHEDRAL){
+        fa.x=-dUdphi*gradphi_A.x;
+        fa.y=-dUdphi*gradphi_A.y;
+        fa.z=-dUdphi*gradphi_A.z;
 
-      fb.x=DF*dtB.x;
-      fb.y=DF*dtB.y;
-      fb.z=DF*dtB.z;
+        fb.x=-dUdphi*gradphi_B.x;
+        fb.y=-dUdphi*gradphi_B.y;
+        fb.z=-dUdphi*gradphi_B.z;
 
-      fc.x=DF*dtC.x;
-      fc.y=DF*dtC.y;
-      fc.z=DF*dtC.z;
+        fc.x=-dUdphi*gradphi_C.x;
+        fc.y=-dUdphi*gradphi_C.y;
+        fc.z=-dUdphi*gradphi_C.z;
 
-      fd.x=DF*dtD.x;
-      fd.y=DF*dtD.y;
-      fd.z=DF*dtD.z;
+        fd.x=-dUdphi*gradphi_D.x;
+        fd.y=-dUdphi*gradphi_D.y;
+        fd.z=-dUdphi*gradphi_D.z;
+      } else {
+        // Calculate the first derivative vectors.
+        d=dot_ab/rbc;
+        e=dot_cd/rbc;
 
+        dtA.x=(ds.x-CosPhi*dr.x)/r;
+        dtA.y=(ds.y-CosPhi*dr.y)/r;
+        dtA.z=(ds.z-CosPhi*dr.z)/r;
+
+        dtD.x=(dr.x-CosPhi*ds.x)/s;
+        dtD.y=(dr.y-CosPhi*ds.y)/s;
+        dtD.z=(dr.z-CosPhi*ds.z)/s;
+
+        dtB.x=dtA.x*(d-1.0)+e*dtD.x;
+        dtB.y=dtA.y*(d-1.0)+e*dtD.y;
+        dtB.z=dtA.z*(d-1.0)+e*dtD.z;
+
+        dtC.x=-dtD.x*(e+1.0)-d*dtA.x;
+        dtC.y=-dtD.y*(e+1.0)-d*dtA.y;
+        dtC.z=-dtD.z*(e+1.0)-d*dtA.z;
+        fa.x=DF*dtA.x;
+        fa.y=DF*dtA.y;
+        fa.z=DF*dtA.z;
+
+        fb.x=DF*dtB.x;
+        fb.y=DF*dtB.y;
+        fb.z=DF*dtB.z;
+
+        fc.x=DF*dtC.x;
+        fc.y=DF*dtC.y;
+        fc.z=DF*dtC.z;
+
+        fd.x=DF*dtD.x;
+        fd.y=DF*dtD.y;
+        fd.z=DF*dtD.z;
+      }
       // add contribution to the strain derivative tensor
       // Note: rbc is here because the vector was normalized before
       S.ax=Dab.x*fa.x+Dcb.x*rbc*(fc.x+fd.x)+Ddc.x*fd.x;
@@ -4966,13 +5380,17 @@ void ComputeFrameworkImproperTorsionHessian(REAL *Energy,REAL* Gradient,REAL_MAT
       dr.y=Dab.y-dot_ab*Dcb.y;
       dr.z=Dab.z-dot_ab*Dcb.z;
       r=sqrt(SQR(dr.x)+SQR(dr.y)+SQR(dr.z));
-      dr.x/=r; dr.y/=r; dr.z/=r;
+      if (r!=0.0){
+        dr.x/=r; dr.y/=r; dr.z/=r;
+      }
 
       ds.x=Ddc.x-dot_cd*Dcb.x;
       ds.y=Ddc.y-dot_cd*Dcb.y;
       ds.z=Ddc.z-dot_cd*Dcb.z;
       s=sqrt(SQR(ds.x)+SQR(ds.y)+SQR(ds.z));
-      ds.x/=s; ds.y/=s; ds.z/=s;
+      if (s!=0.0){
+        ds.x/=s; ds.y/=s; ds.z/=s;
+      }
 
       // compute Cos(Phi)
       // Phi is defined in protein convention Phi(trans)=Pi
@@ -6356,13 +6774,17 @@ void CalculateFrameworkBendTorsionForces(int f1,int i,VECTOR posA,VECTOR posB,VE
   dr.y=Dab.y-dot_ab*Dbc.y;
   dr.z=Dab.z-dot_ab*Dbc.z;
   r=MAX2((REAL)1.0e-8,sqrt(SQR(dr.x)+SQR(dr.y)+SQR(dr.z)));
-  dr.x/=r; dr.y/=r; dr.z/=r;
+  if (r!=0.0){
+    dr.x/=r; dr.y/=r; dr.z/=r;
+  }
 
   ds.x=Dcd.x-dot_cd*Dbc.x;
   ds.y=Dcd.y-dot_cd*Dbc.y;
   ds.z=Dcd.z-dot_cd*Dbc.z;
   s=MAX2((REAL)1.0e-8,sqrt(SQR(ds.x)+SQR(ds.y)+SQR(ds.z)));
-  ds.x/=s; ds.y/=s; ds.z/=s;
+  if (s!=0.0){
+    ds.x/=s; ds.y/=s; ds.z/=s;
+  }
 
   // compute Cos(Phi)
   // Phi is defined in protein convention Phi(trans)=Pi

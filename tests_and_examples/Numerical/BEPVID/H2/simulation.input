@@ -1,0 +1,47 @@
+SimulationType Numerical
+NumberOfCycles 2
+NumberOfEquilibrationCycles 2
+NumberOfInitializationCycles 2
+PrintEvery 1
+
+ContinueAfterCrash no
+WriteBinaryRestartFileEvery 1000
+RandomSeed 493896
+
+Ensemble NVT
+
+ChargeMethod Ewald
+CutOff 8.0
+TimeStep 0.0005
+Forcefield Local
+EwaldPrecision 1e-6
+
+ComputePolarization yes
+BackPolarization no
+ComputeElasticConstants no
+
+Framework 0
+FrameworkName BEPVID_MANZ_BEND_ADDT
+UseChargesFromCIFFile yes
+UnitCells 2 2 2
+ExternalTemperature 298.0
+ComputeMSD yes
+PrintMSDEvery 1000
+Remove12NeighboursFromVDWInteraction yes
+Remove13NeighboursFromVDWInteraction yes
+Remove14NeighboursFromVDWInteraction yes
+Remove12NeighboursFromChargeChargeInteraction yes
+Remove13NeighboursFromChargeChargeInteraction yes
+Remove14NeighboursFromChargeChargeInteraction yes
+
+FrameworkDefinitions BEPVID_MANZ_BEND_ADDT
+FlexibleFramework yes
+
+Component 0 MoleculeName H2
+MoleculeDefinition TraPPE
+TranslationProbability 1.0
+RotationProbability 1.0
+ReinsertionProbability 1.0
+CreateNumberOfMolecules 10
+
+

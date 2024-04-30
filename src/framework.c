@@ -9087,6 +9087,10 @@ int ReadFrameworkDefinition(void)
                         Framework[CurrentSystem].BendArguments[CurrentFramework][index][0]*=KELVIN_TO_ENERGY;
                         Framework[CurrentSystem].BendArguments[CurrentFramework][index][1]=theta;
                         break;
+                      case MANZ_BEND:
+                        Framework[CurrentSystem].BendArguments[CurrentFramework][index][0]*=KELVIN_TO_ENERGY;
+                        Framework[CurrentSystem].BendArguments[CurrentFramework][index][1]*=DEG2RAD;
+                        break;
                       case QUARTIC_BEND:
                         // (1/2)p_0*(theta-p_1)^2+(1/3)*p_2*(theta-p_1)^3+(1/4)*p_2*(theta-p_1)^4
                         // ======================================================================
@@ -9717,6 +9721,46 @@ int ReadFrameworkDefinition(void)
                             arguments[0]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][0]*KELVIN_TO_ENERGY;
                             arguments[1]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][1];
                             arguments[2]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][2]*DEG2RAD;
+                            break;
+                          case CADT_MODE_ONE_ONLY:
+                            // p_0*(1-cos(phi-p_1))
+                            // ========================
+                            // parms[0]  equilibrium dihedral value
+                            // parms[1]  dihedral torsion force constant 
+                            arguments[0]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][0]*DEG2RAD;
+                            arguments[1]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][1]*KELVIN_TO_ENERGY;
+                            break;
+                          case CADT_DIHEDRAL:
+                            // p_0*(1-cos(phi-p_1))
+                            // ========================
+                            // parms[0]  equilibrium dihedral value
+                            // parms[1] to parms[7] are force constants for torsion modes 1 to 7, respectively
+                            arguments[0]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][0]*DEG2RAD;
+                            arguments[1]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][1]*KELVIN_TO_ENERGY;
+                            arguments[2]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][2]*KELVIN_TO_ENERGY;
+                            arguments[3]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][3]*KELVIN_TO_ENERGY;
+                            arguments[4]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][4]*KELVIN_TO_ENERGY;
+                            arguments[5]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][5]*KELVIN_TO_ENERGY;
+                            arguments[6]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][6]*KELVIN_TO_ENERGY;
+                            arguments[7]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][7]*KELVIN_TO_ENERGY;
+                            break;
+                          case ADDT_MODE_ONE_ONLY:
+                            arguments[0]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][0]*DEG2RAD;
+                            arguments[1]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][1]*KELVIN_TO_ENERGY;
+                            arguments[2]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][2]*DEG2RAD;
+                            arguments[3]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][3]*DEG2RAD;
+                            break;
+                          case ADDT_DIHEDRAL:
+                            arguments[0]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][0]*DEG2RAD;
+                            arguments[1]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][1]*KELVIN_TO_ENERGY;
+                            arguments[2]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][2]*KELVIN_TO_ENERGY;
+                            arguments[3]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][3]*KELVIN_TO_ENERGY;
+                            arguments[4]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][4]*KELVIN_TO_ENERGY;
+                            arguments[5]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][5]*KELVIN_TO_ENERGY;
+                            arguments[6]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][6]*KELVIN_TO_ENERGY;
+                            arguments[7]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][7]*KELVIN_TO_ENERGY;
+                            arguments[8]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][8]*DEG2RAD;
+                            arguments[9]=Framework[CurrentSystem].TorsionArgumentDefinitions[i][9]*DEG2RAD;
                             break;
                           case OPLS_DIHEDRAL:
                             // (1/2)p_0[0]+(1/2)p_1*(1+cos(phi))+(1/2)p_2*(1-cos(2*phi))+(1/2)p_3*(1+cos(3*phi))

@@ -592,10 +592,12 @@ REAL PrintUreyBradleyEnergyStatus(int nr,char *string,int UreyBradleyType,REAL *
 
 REAL PrintBendEnergyStatus(int nr,char *string,int BendType,REAL *parms,REAL Theta)
 {
-  REAL U,temp,temp2;
+  REAL U,temp,temp2,temp3;
+  REAL CosPar1,SQRCosPar1,SQRCosTheta,p_Theta,p_Par1,w_Theta;
   REAL CosTheta;
 
   CosTheta=cos(Theta);
+  CosTheta = MAX2(MIN2(CosTheta,1.0),-1.0);
   switch(BendType)
   {
     case HARMONIC_BEND:
@@ -605,6 +607,36 @@ REAL PrintBendEnergyStatus(int nr,char *string,int BendType,REAL *parms,REAL The
       // p_1     [degrees]
       U=0.5*parms[0]*SQR(Theta-parms[1]);
       fprintf(OutputFilePtr[CurrentSystem],"%4d HARMONIC_BEND %s, p_0/k_B=%8.5f [K/rad^2], p_1=%8.5f [degrees], Theta: %8.5f [degrees], Energy: %8.5f [K] %8.5f [kJ/mol] %8.5f [kcal/mol]\n",
+                nr,
+                string,
+                parms[0]*ENERGY_TO_KELVIN,
+                parms[1]*RAD2DEG,
+                Theta*RAD2DEG,
+                U*ENERGY_TO_KELVIN,
+                U*ENERGY_TO_KJ_PER_MOL,
+                U*ENERGY_TO_KCAL_PER_MOL);
+      break;
+    case MANZ_BEND:
+      // 2*(cos(Theta) - cos(parms[1]))^2/(sin(Theta)^2 + 3*sin(parms[1])^2*(tanh(2*sin(parms[1]/2))/tanh(2*sin(Theta/2))))
+      // Use equivalent function re-expressed using only the cosine functions to save computational cost.
+      // ===============================================
+      // parms[0] angle-bending force constant
+      // parms[1] equilibrium angle in radians
+      if ((fabs(parms[1] - M_PI) + fabs(Theta - M_PI)) < 1e-6) {
+            U = 0;
+      } else {
+        CosPar1 = cos(parms[1]);
+        SQRCosPar1 = SQR(CosPar1);
+        SQRCosTheta = SQR(CosTheta);
+        p_Theta = sqrt(2*(1.0 - CosTheta));
+        p_Par1 = sqrt(2*(1.0 - CosPar1));
+        temp = tanh(p_Theta);
+        temp2 = tanh(p_Par1);
+        temp3 = CosTheta - CosPar1;
+        w_Theta = 1 - SQRCosTheta + 3*(1-SQRCosPar1)*(temp/temp2);
+        U = parms[0]*(2*SQR(temp3))/w_Theta;
+      }
+      fprintf(OutputFilePtr[CurrentSystem],"%4d MANZ_BEND %s, p_0/k_B=%8.5f [K/rad^2], p_1=%8.5f [degrees], Theta: %8.5f [degrees], Energy: %8.5f [K] %8.5f [kJ/mol] %8.5f [kcal/mol]\n",
                 nr,
                 string,
                 parms[0]*ENERGY_TO_KELVIN,
@@ -899,10 +931,18 @@ REAL PrintInversionBendEnergyStatus(int nr,char *string,int InversionBendType,RE
  return energy;
 }
 
-REAL PrintTorsionEnergyStatus(int nr,char *string,int TorsionType,REAL *parms,REAL Phi)
+REAL PrintTorsionEnergyStatus(int nr,char *string,int TorsionType,REAL *parms,REAL Phi,POINT posA,POINT posB,POINT posC,POINT posD)
 {
-  REAL U,CosPhi,CosPhi2;
-
+  REAL rbc,rab,rcd,U,CosPhi,CosPhi2;
+  REAL SindelPhi,CosdelPhi,Sin2delPhi,Cos2delPhi,Sin3delPhi,Cos3delPhi,Sin4delPhi,Cos4delPhi;
+  VECTOR Rvec_ba,Rvec_bc,Rvec_cd,Rhat_ba,Rhat_bc,Rhat_cd;
+  REAL Theta_abc,Theta_bcd,CosTheta_abc,CosTheta_bcd;
+  REAL cht_1,cht_2,cht_eq_1,cht_eq_2;
+  REAL pow2_cht_1,pow2_cht_2,pow2_cht_eq_1,pow2_cht_eq_2,pow3_cht_1,pow3_cht_2,pow3_cht_eq_1,pow3_cht_eq_2;
+  REAL P1_1,P1_2,P2_1,P2_2,P3_1,P3_2,P4_1,P4_2;
+  REAL P1_eq_1,P1_eq_2,P2_eq_1,P2_eq_2,P3_eq_1,P3_eq_2,P4_eq_1,P4_eq_2;
+  REAL fp1,fp2,fp3,fp4,fp1_eq,fp2_eq,fp3_eq,fp4_eq;
+  REAL temp_coef1,temp_coef2,temp_coef3,temp_coef4,U_cos,U_sin;
   CosPhi=cos(Phi);
   CosPhi2=SQR(CosPhi);
   switch(TorsionType)
@@ -1096,6 +1136,234 @@ REAL PrintTorsionEnergyStatus(int nr,char *string,int TorsionType,REAL *parms,RE
                 parms[0]*ENERGY_TO_KELVIN,
                 parms[1],
                 parms[2]*RAD2DEG,
+                Phi*RAD2DEG,
+                U*ENERGY_TO_KELVIN,
+                U*ENERGY_TO_KJ_PER_MOL,
+                U*ENERGY_TO_KCAL_PER_MOL);
+      break;
+    case CADT_MODE_ONE_ONLY:
+      // p_0*(1-cos(phi-p_1))
+      // ========================
+      // parms[0]  dihedral torsion force constant 
+      // parms[1]  equilibrium dihedral value in radians
+      U=parms[1]*(1.0-cos(Phi-parms[0]));
+      fprintf(OutputFilePtr[CurrentSystem],"%4d CADT_MODE_ONE_ONLY %s, p_0=%8.5f [degrees], p_1/k_B=%8.5f [K], "
+                                           "Phi: %8.5f [degrees], Energy: %8.5f [K] %8.5f [kJ/mol] %8.5f [kcal/mol]\n",
+                nr,
+                string,
+                parms[0]*RAD2DEG,
+                parms[1]*ENERGY_TO_KELVIN,
+                Phi*RAD2DEG,
+                U*ENERGY_TO_KELVIN,
+                U*ENERGY_TO_KJ_PER_MOL,
+                U*ENERGY_TO_KCAL_PER_MOL);
+      break;
+    case CADT_DIHEDRAL:
+      // parms[0]  equilibrium dihedral value
+      // parms[1] to parms[7] are force constants for torsion modes 1 to 7, respectively
+      SindelPhi=sin(Phi-parms[0]);
+      CosdelPhi=cos(Phi-parms[0]);
+      Sin2delPhi=sin(2*(Phi-parms[0]));
+      Cos2delPhi=cos(2*(Phi-parms[0]));
+      Sin3delPhi=sin(3*(Phi-parms[0]));
+      Cos3delPhi=cos(3*(Phi-parms[0]));
+      Sin4delPhi=sin(4*(Phi-parms[0]));
+      Cos4delPhi=cos(4*(Phi-parms[0]));
+      
+      temp_coef1 = 3*const1over_sqrt10*parms[5] + const1over_sqrt15*parms[7];
+      temp_coef2 = 2*const1over_sqrt5*parms[6] - const1over_sqrt15*parms[7];
+      temp_coef3 = -1*const1over_sqrt10*parms[5] + 3*const1over_sqrt15*parms[7];
+      temp_coef4 = -1*const1over_sqrt5*parms[6] - 2*const1over_sqrt15*parms[7];
+
+      U_cos = parms[1]*(1.0-CosdelPhi) + parms[2]*(1.0-Cos2delPhi) + parms[3]*(1.0-Cos3delPhi) + parms[4]*(1.0-Cos4delPhi);
+      U_sin = temp_coef1*SindelPhi + temp_coef2*Sin2delPhi + temp_coef3*Sin3delPhi + temp_coef4*Sin4delPhi;
+
+      U = U_cos + U_sin;
+      fprintf(OutputFilePtr[CurrentSystem],"%4d CADT_DIHEDRAL %s, p_0=%8.5f [degrees], p_1/k_B=%8.5f [K], p_2/k_B=%8.5f [K],"
+                                           "p_3/k_B=%8.5f [K], p_4/k_B=%8.5f [K], p_5/k_B=%8.5f [K], p_6/k_B=%8.5f [K], p_7/k_B=%8.5f [K],"
+                                           "Phi: %8.5f [degrees], Energy: %8.5f [K] %8.5f [kJ/mol] %8.5f [kcal/mol]\n",
+                nr,
+                string,
+                parms[0]*RAD2DEG,
+                parms[1]*ENERGY_TO_KELVIN,
+                parms[2]*ENERGY_TO_KELVIN,
+                parms[3]*ENERGY_TO_KELVIN,
+                parms[4]*ENERGY_TO_KELVIN,
+                parms[5]*ENERGY_TO_KELVIN,
+                parms[6]*ENERGY_TO_KELVIN,
+                parms[7]*ENERGY_TO_KELVIN,
+                Phi*RAD2DEG,
+                U*ENERGY_TO_KELVIN,
+                U*ENERGY_TO_KJ_PER_MOL,
+                U*ENERGY_TO_KCAL_PER_MOL);
+      break;
+    case ADDT_MODE_ONE_ONLY:
+      Rvec_ba.x = posA.x-posB.x;
+      Rvec_ba.y = posA.y-posB.y;
+      Rvec_ba.z = posA.z-posB.z;
+      Rvec_ba = ApplyBoundaryCondition(Rvec_ba);
+      rab = sqrt(SQR(Rvec_ba.x)+SQR(Rvec_ba.y)+SQR(Rvec_ba.z));
+      Rhat_ba.x/=rab; Rhat_ba.y/=rab; Rhat_ba.z/=rab; 
+
+      Rvec_bc.x = posC.x-posB.x;
+      Rvec_bc.y = posC.y-posB.y;
+      Rvec_bc.z = posC.z-posB.z;
+      Rvec_bc = ApplyBoundaryCondition(Rvec_bc);
+      rbc = sqrt(SQR(Rvec_bc.x)+SQR(Rvec_bc.y)+SQR(Rvec_bc.z));
+      Rhat_bc.x/=rbc; Rhat_bc.y/=rbc; Rhat_bc.z/=rbc;
+
+      Rvec_cd.x = posD.x-posC.x;
+      Rvec_cd.y = posD.y-posC.y;
+      Rvec_cd.z = posD.z-posC.z;
+      Rvec_cd = ApplyBoundaryCondition(Rvec_cd);
+      rcd = sqrt(SQR(Rvec_cd.x)+SQR(Rvec_cd.y)+SQR(Rvec_cd.z));
+      Rhat_cd.x/=rcd; Rhat_cd.y/=rcd; Rhat_cd.z/=rcd;
+
+      CosTheta_abc=MAX2(MIN2(Rhat_ba.x*Rhat_bc.x+Rhat_ba.y*Rhat_bc.y+Rhat_ba.z*Rhat_bc.z,1.0),-1.0);
+      Theta_abc=acos(CosTheta_abc);
+      CosTheta_bcd=MAX2(MIN2((-Rhat_bc.x)*Rhat_cd.x+(-Rhat_bc.y)*Rhat_cd.y+(-Rhat_bc.z)*Rhat_cd.z,1.0),-1.0);
+      Theta_bcd=acos(CosTheta_bcd);
+
+      CosdelPhi=cos(Phi-parms[0]);
+      cht_1=cos(Theta_abc/2);
+      cht_2=cos(Theta_bcd/2);
+      cht_eq_1=cos(parms[2]/2);
+      cht_eq_2=cos(parms[3]/2);
+      pow3_cht_1 = cht_1*cht_1*cht_1;
+      pow3_cht_2 = cht_2*cht_2*cht_2;
+      pow3_cht_eq_1 = cht_eq_1*cht_eq_1*cht_eq_1;
+      pow3_cht_eq_2 = cht_eq_2*cht_eq_2*cht_eq_2;
+      P1_1=(cht_1 + 3*pow3_cht_1)/4;
+      P1_2=(cht_2 + 3*pow3_cht_2)/4;
+      P1_eq_1=(cht_eq_1 + 3*pow3_cht_eq_1)/4;
+      P1_eq_2=(cht_eq_2 + 3*pow3_cht_eq_2)/4;
+      fp1 = tanh(ADDT_K*P1_1)*tanh(ADDT_K*P1_2)/(ADDT_tanh_K_squared);
+      fp1_eq = tanh(ADDT_K*P1_eq_1)*tanh(ADDT_K*P1_eq_2)/(ADDT_tanh_K_squared);
+      U = parms[1]*((1/2)*(((fp1/fp1_eq)-1)*((fp1/fp1_eq)-1)) + (fp1/fp1_eq)*(1-CosdelPhi));
+      fprintf(OutputFilePtr[CurrentSystem],"%4d ADDT_MODE_ONE_ONLY %s, p_0=%8.5f [degrees], p_1/k_B=%8.5f [K], p_2=%8.5f [degrees], p_3=%8.5f [degrees] "
+                                           "Phi: %8.5f [degrees], Energy: %8.5f [K] %8.5f [kJ/mol] %8.5f [kcal/mol]\n",
+                nr,
+                string,
+                parms[0]*RAD2DEG,
+                parms[1]*ENERGY_TO_KELVIN,
+                parms[3]*RAD2DEG,
+                parms[4]*RAD2DEG,
+                Phi*RAD2DEG,
+                U*ENERGY_TO_KELVIN,
+                U*ENERGY_TO_KJ_PER_MOL,
+                U*ENERGY_TO_KCAL_PER_MOL);
+      break;
+    case ADDT_DIHEDRAL:
+      Rvec_ba.x = posA.x-posB.x;
+      Rvec_ba.y = posA.y-posB.y;
+      Rvec_ba.z = posA.z-posB.z;
+      Rvec_ba = ApplyBoundaryCondition(Rvec_ba);
+      rab = sqrt(SQR(Rvec_ba.x)+SQR(Rvec_ba.y)+SQR(Rvec_ba.z));
+      Rhat_ba.x/=rab; Rhat_ba.y/=rab; Rhat_ba.z/=rab; 
+
+      Rvec_bc.x = posC.x-posB.x;
+      Rvec_bc.y = posC.y-posB.y;
+      Rvec_bc.z = posC.z-posB.z;
+      Rvec_bc = ApplyBoundaryCondition(Rvec_bc);
+      rbc = sqrt(SQR(Rvec_bc.x)+SQR(Rvec_bc.y)+SQR(Rvec_bc.z));
+      Rhat_bc.x/=rbc; Rhat_bc.y/=rbc; Rhat_bc.z/=rbc;
+
+      Rvec_cd.x = posD.x-posC.x;
+      Rvec_cd.y = posD.y-posC.y;
+      Rvec_cd.z = posD.z-posC.z;
+      Rvec_cd = ApplyBoundaryCondition(Rvec_cd);
+      rcd = sqrt(SQR(Rvec_cd.x)+SQR(Rvec_cd.y)+SQR(Rvec_cd.z));
+      Rhat_cd.x/=rcd; Rhat_cd.y/=rcd; Rhat_cd.z/=rcd;
+
+      CosTheta_abc=MAX2(MIN2(Rhat_ba.x*Rhat_bc.x+Rhat_ba.y*Rhat_bc.y+Rhat_ba.z*Rhat_bc.z,1.0),-1.0);
+      Theta_abc=acos(CosTheta_abc);
+      CosTheta_bcd=MAX2(MIN2((-Rhat_bc.x)*Rhat_cd.x+(-Rhat_bc.y)*Rhat_cd.y+(-Rhat_bc.z)*Rhat_cd.z,1.0),-1.0);
+      Theta_bcd=acos(CosTheta_bcd);
+
+      CosdelPhi=cos(Phi-parms[0]);
+      SindelPhi=sin(Phi-parms[0]);
+      Sin2delPhi=sin(2*(Phi-parms[0]));
+      Sin3delPhi=sin(3*(Phi-parms[0]));
+      Sin4delPhi=sin(4*(Phi-parms[0]));
+      cht_1=cos(Theta_abc/2);
+      cht_2=cos(Theta_bcd/2);
+      cht_eq_1=cos(parms[8]/2);
+      cht_eq_2=cos(parms[9]/2);
+
+      pow2_cht_1 = cht_1*cht_1;
+      pow2_cht_2 = cht_2*cht_2;
+      pow2_cht_eq_1 = cht_eq_1*cht_eq_1;
+      pow2_cht_eq_2 = cht_eq_2*cht_eq_2;
+      pow3_cht_1 = cht_1*cht_1*cht_1;
+      pow3_cht_2 = cht_2*cht_2*cht_2;
+      pow3_cht_eq_1 = cht_eq_1*cht_eq_1*cht_eq_1;
+      pow3_cht_eq_2 = cht_eq_2*cht_eq_2*cht_eq_2;
+
+      P1_1 = (cht_1 + 3*pow3_cht_1)/4;
+      P1_2 = (cht_2 + 3*pow3_cht_2)/4;
+      P2_1 = (3*pow2_cht_1 + pow3_cht_1*cht_1)/4;
+      P2_2 = (3*pow2_cht_2 + pow3_cht_2*cht_2)/4;
+      P3_1 = (6*pow3_cht_1 - 3*(pow3_cht_1*pow2_cht_1) + (pow3_cht_1*pow3_cht_1*cht_1))/4;
+      P3_2 = (6*pow3_cht_2 - 3*(pow3_cht_2*pow2_cht_2) + (pow3_cht_2*pow3_cht_2*cht_2))/4;   
+      P4_1 = (10*(pow3_cht_1*cht_1) - 9*(pow3_cht_1*pow3_cht_1) + 3*(pow3_cht_1*pow3_cht_1*pow2_cht_1))/4;
+      P4_2 = (10*(pow3_cht_2*cht_2) - 9*(pow3_cht_2*pow3_cht_2) + 3*(pow3_cht_2*pow3_cht_2*pow2_cht_2))/4;
+
+      P1_eq_1 = (cht_eq_1 + 3*pow3_cht_eq_1)/4;
+      P1_eq_2 = (cht_eq_2 + 3*pow3_cht_eq_2)/4;
+      P2_eq_1 = (3*pow2_cht_eq_1 + pow3_cht_eq_1*cht_eq_1)/4;
+      P2_eq_2 = (3*pow2_cht_eq_2 + pow3_cht_eq_2*cht_eq_2)/4;
+      P3_eq_1 = (6*pow3_cht_eq_1 - 3*(pow3_cht_eq_1*pow2_cht_eq_1) + (pow3_cht_eq_1*pow3_cht_eq_1*cht_eq_1))/4;
+      P3_eq_2 = (6*pow3_cht_eq_2 - 3*(pow3_cht_eq_2*pow2_cht_eq_2) + (pow3_cht_eq_2*pow3_cht_eq_2*cht_eq_2))/4;   
+      P4_eq_1 = (10*(pow3_cht_eq_1*cht_eq_1) - 9*(pow3_cht_eq_1*pow3_cht_eq_1) + 3*(pow3_cht_eq_1*pow3_cht_eq_1*pow2_cht_eq_1))/4;
+      P4_eq_2 = (10*(pow3_cht_eq_2*cht_eq_2) - 9*(pow3_cht_eq_2*pow3_cht_eq_2) + 3*(pow3_cht_eq_2*pow3_cht_eq_2*pow2_cht_eq_2))/4;
+
+      fp1 = tanh(ADDT_K*P1_1)*tanh(ADDT_K*P1_2)/(ADDT_tanh_K_squared);
+      fp2 = tanh(ADDT_K*P2_1)*tanh(ADDT_K*P2_2)/(ADDT_tanh_K_squared);
+      fp3 = tanh(ADDT_K*P3_1)*tanh(ADDT_K*P3_2)/(ADDT_tanh_K_squared);
+      fp4 = tanh(ADDT_K*P4_1)*tanh(ADDT_K*P4_2)/(ADDT_tanh_K_squared);
+
+      fp1_eq = tanh(ADDT_K*P1_eq_1)*tanh(ADDT_K*P1_eq_2)/(ADDT_tanh_K_squared);
+      fp2_eq = tanh(ADDT_K*P2_eq_1)*tanh(ADDT_K*P2_eq_2)/(ADDT_tanh_K_squared);
+      fp3_eq = tanh(ADDT_K*P3_eq_1)*tanh(ADDT_K*P3_eq_2)/(ADDT_tanh_K_squared);
+      fp4_eq = tanh(ADDT_K*P4_eq_1)*tanh(ADDT_K*P4_eq_2)/(ADDT_tanh_K_squared);
+
+      U = 0;
+      if (parms[1] != 0.0) {
+        U += parms[1]*((1/2)*(((fp1/fp1_eq)-1)*((fp1/fp1_eq)-1)) + (fp1/fp1_eq)*(1-CosdelPhi));
+      }
+      if (parms[2] != 0.0) {
+        U += parms[2]*((1/2)*(((fp2/fp1_eq)-(fp2_eq/fp1_eq))*((fp2/fp1_eq)-(fp2_eq/fp1_eq))) + (fp2/fp2_eq)*(1-cos(2*(Phi-parms[0]))));
+      }
+      if (parms[3] != 0.0) {
+        U += parms[3]*((1/2)*(((fp3/fp1_eq)-(fp3_eq/fp1_eq))*((fp3/fp1_eq)-(fp3_eq/fp1_eq))) + (fp3/fp3_eq)*(1-cos(3*(Phi-parms[0]))));
+      }
+      if (parms[4] != 0.0) {
+        U += parms[4]*((1/2)*(((fp4/fp1_eq)-(fp4_eq/fp1_eq))*((fp4/fp1_eq)-(fp4_eq/fp1_eq))) + (fp4/fp4_eq)*(1-cos(4*(Phi-parms[0]))));
+      }
+      if (parms[5] != 0.0) {
+        U += parms[5]*(3*SindelPhi*(fp1/fp1_eq) - Sin3delPhi*(fp3/fp3_eq))*const1over_sqrt10;
+      }
+      if (parms[6] != 0.0) {
+        U += parms[6]*(2*Sin2delPhi*(fp2/fp2_eq) - Sin4delPhi*(fp4/fp4_eq))*const1over_sqrt5;
+      }
+      if (parms[7] != 0.0) {
+        U += parms[7]*((SindelPhi*(fp1/fp1_eq) + 3*Sin3delPhi*(fp3/fp3_eq)) - (Sin2delPhi*(fp2/fp2_eq) + 2*Sin4delPhi*(fp4/fp4_eq)))*const1over_sqrt15;
+      }
+      fprintf(OutputFilePtr[CurrentSystem],"%4d ADDT_DIHEDRAL %s, p_0=%8.5f [degrees], p_1/k_B=%8.5f [K], p_2/k_B=%8.5f [K],"
+                                           "p_3/k_B=%8.5f [K], p_4/k_B=%8.5f [K], p_5/k_B=%8.5f [K], p_6/k_B=%8.5f [K], p_7/k_B=%8.5f [K], p_8=%8.5f [degrees], p_9=%8.5f [degrees] "
+                                           "Phi: %8.5f [degrees], Energy: %8.5f [K] %8.5f [kJ/mol] %8.5f [kcal/mol]\n",
+                nr,
+                string,
+                parms[0]*RAD2DEG,
+                parms[1]*ENERGY_TO_KELVIN,
+                parms[2]*ENERGY_TO_KELVIN,
+                parms[3]*ENERGY_TO_KELVIN,
+                parms[4]*ENERGY_TO_KELVIN,
+                parms[5]*ENERGY_TO_KELVIN,
+                parms[6]*ENERGY_TO_KELVIN,
+                parms[7]*ENERGY_TO_KELVIN,
+                parms[8]*RAD2DEG,
+                parms[9]*RAD2DEG,
                 Phi*RAD2DEG,
                 U*ENERGY_TO_KELVIN,
                 U*ENERGY_TO_KJ_PER_MOL,
@@ -3680,27 +3948,28 @@ void PrintFrameworkBendEnergyStatus(void)
           Rab.z=posA.z-posB.z;
           Rab=ApplyBoundaryCondition(Rab);
           rab=sqrt(SQR(Rab.x)+SQR(Rab.y)+SQR(Rab.z));
-          Rab.x/=rab;
-          Rab.y/=rab;
-          Rab.z/=rab;
-
+          
           Rbc.x=posC.x-posB.x;
           Rbc.y=posC.y-posB.y;
           Rbc.z=posC.z-posB.z;
           Rbc=ApplyBoundaryCondition(Rbc);
           rbc=sqrt(SQR(Rbc.x)+SQR(Rbc.y)+SQR(Rbc.z));
-          Rbc.x/=rbc;
-          Rbc.y/=rbc;
-          Rbc.z/=rbc;
-
-          Rac.x=posC.x-posA.x;
-          Rac.y=posC.y-posA.y;
-          Rac.z=posC.z-posA.z;
-          Rac=ApplyBoundaryCondition(Rac);
+          
+          Rac.x=Rbc.x-Rab.x;
+          Rac.y=Rbc.y-Rab.y;
+          Rac.z=Rbc.z-Rab.z;
           rac=sqrt(SQR(Rac.x)+SQR(Rac.y)+SQR(Rac.z));
           Rac.x/=rac;
           Rac.y/=rac;
           Rac.z/=rac;
+
+          Rab.x/=rab;
+          Rab.y/=rab;
+          Rab.z/=rab;
+
+          Rbc.x/=rbc;
+          Rbc.y/=rbc;
+          Rbc.z/=rbc;
 
           CosTheta=(Rab.x*Rbc.x+Rab.y*Rbc.y+Rab.z*Rbc.z);
           break;
@@ -3921,13 +4190,17 @@ void PrintFrameworkTorsionEnergyStatus(void)
       dr.y=Dab.y-dot_ab*Dcb.y;
       dr.z=Dab.z-dot_ab*Dcb.z;
       r=MAX2((REAL)1.0e-8,sqrt(SQR(dr.x)+SQR(dr.y)+SQR(dr.z)));
-      dr.x/=r; dr.y/=r; dr.z/=r;
+      if (r!=0.0){
+        dr.x/=r; dr.y/=r; dr.z/=r;
+      }
 
       ds.x=Ddc.x-dot_cd*Dcb.x;
       ds.y=Ddc.y-dot_cd*Dcb.y;
       ds.z=Ddc.z-dot_cd*Dcb.z;
       s=MAX2((REAL)1.0e-8,sqrt(SQR(ds.x)+SQR(ds.y)+SQR(ds.z)));
-      ds.x/=s; ds.y/=s; ds.z/=s;
+      if (s!=0.0){
+        ds.x/=s; ds.y/=s; ds.z/=s;
+      }
 
       // compute Cos(Phi)
       // Phi is defined in protein convention Phi(trans)=Pi
@@ -3955,7 +4228,7 @@ void PrintFrameworkTorsionEnergyStatus(void)
                  PseudoAtoms[Framework[CurrentSystem].Atoms[f1][C].Type].Name,
                  PseudoAtoms[Framework[CurrentSystem].Atoms[f1][D].Type].Name);
 
-      U=PrintTorsionEnergyStatus(nr++,string,Framework[CurrentSystem].TorsionType[f1][i],parms,Phi);
+      U=PrintTorsionEnergyStatus(nr++,string,Framework[CurrentSystem].TorsionType[f1][i],parms,Phi,posA,posB,posC,posD);
 
 
       // energy
@@ -4027,13 +4300,17 @@ void PrintFrameworkImproperTorsionEnergyStatus(void)
       dr.y=Dab.y-dot_ab*Dcb.y;
       dr.z=Dab.z-dot_ab*Dcb.z;
       r=MAX2((REAL)1.0e-8,sqrt(SQR(dr.x)+SQR(dr.y)+SQR(dr.z)));
-      dr.x/=r; dr.y/=r; dr.z/=r;
+      if (r!=0.0){
+        dr.x/=r; dr.y/=r; dr.z/=r;
+      }
 
       ds.x=Ddc.x-dot_cd*Dcb.x;
       ds.y=Ddc.y-dot_cd*Dcb.y;
       ds.z=Ddc.z-dot_cd*Dcb.z;
       s=MAX2((REAL)1.0e-8,sqrt(SQR(ds.x)+SQR(ds.y)+SQR(ds.z)));
-      ds.x/=s; ds.y/=s; ds.z/=s;
+      if (s!=0.0){
+        ds.x/=s; ds.y/=s; ds.z/=s;
+      }
 
       // compute Cos(Phi)
       // Phi is defined in protein convention Phi(trans)=Pi
@@ -4366,13 +4643,17 @@ void PrintFrameworkBondTorsionEnergyStatus(void)
       dr.y=Dab.y-dot_ab*Dcb.y;
       dr.z=Dab.z-dot_ab*Dcb.z;
       r=sqrt(SQR(dr.x)+SQR(dr.y)+SQR(dr.z));
-      dr.x/=r; dr.y/=r; dr.z/=r;
+      if (r!=0.0){
+        dr.x/=r; dr.y/=r; dr.z/=r;
+      }
 
       ds.x=Ddc.x-dot_cd*Dcb.x;
       ds.y=Ddc.y-dot_cd*Dcb.y;
       ds.z=Ddc.z-dot_cd*Dcb.z;
       s=sqrt(SQR(ds.x)+SQR(ds.y)+SQR(ds.z));
-      ds.x/=s; ds.y/=s; ds.z/=s;
+      if (s!=0.0){
+        ds.x/=s; ds.y/=s; ds.z/=s;
+      }
 
       // compute Cos(Phi)
       // Phi is defined in protein convention Phi(trans)=Pi
@@ -4480,13 +4761,17 @@ void PrintFrameworkBendTorsionEnergyStatus(void)
       dr.y=Dab.y-dot_ab*Dbc.y;
       dr.z=Dab.z-dot_ab*Dbc.z;
       r=MAX2((REAL)1.0e-8,sqrt(SQR(dr.x)+SQR(dr.y)+SQR(dr.z)));
-      dr.x/=r; dr.y/=r; dr.z/=r;
+      if (r!=0.0){
+        dr.x/=r; dr.y/=r; dr.z/=r;
+      }
 
       ds.x=Dcd.x-dot_cd*Dbc.x;
       ds.y=Dcd.y-dot_cd*Dbc.y;
       ds.z=Dcd.z-dot_cd*Dbc.z;
       s=MAX2((REAL)1.0e-8,sqrt(SQR(ds.x)+SQR(ds.y)+SQR(ds.z)));
-      ds.x/=s; ds.y/=s; ds.z/=s;
+      if (s!=0.0){
+        ds.x/=s; ds.y/=s; ds.z/=s;
+      }
 
       // compute Cos(Phi)
       // Phi is defined in protein convention Phi(trans)=Pi
@@ -5064,26 +5349,30 @@ void PrintAdsorbateBendEnergyStatus(void)
           Rab.x=posA.x-posB.x;
           Rab.y=posA.y-posB.y;
           Rab.z=posA.z-posB.z;
+          Rab=ApplyBoundaryCondition(Rab);
           rab=sqrt(SQR(Rab.x)+SQR(Rab.y)+SQR(Rab.z));
-          Rab.x/=rab;
-          Rab.y/=rab;
-          Rab.z/=rab;
-
+          
           Rbc.x=posC.x-posB.x;
           Rbc.y=posC.y-posB.y;
           Rbc.z=posC.z-posB.z;
+          Rbc=ApplyBoundaryCondition(Rbc);
           rbc=sqrt(SQR(Rbc.x)+SQR(Rbc.y)+SQR(Rbc.z));
-          Rbc.x/=rbc;
-          Rbc.y/=rbc;
-          Rbc.z/=rbc;
 
-          Rac.x=posC.x-posA.x;
-          Rac.y=posC.y-posA.y;
-          Rac.z=posC.z-posA.z;
+          Rac.x=Rbc.x-Rab.x;
+          Rac.y=Rbc.y-Rab.y;
+          Rac.z=Rbc.z-Rab.z;
           rac=sqrt(SQR(Rac.x)+SQR(Rac.y)+SQR(Rac.z));
           Rac.x/=rac;
           Rac.y/=rac;
           Rac.z/=rac;
+
+          Rab.x/=rab;
+          Rab.y/=rab;
+          Rab.z/=rab;
+
+          Rbc.x/=rbc;
+          Rbc.y/=rbc;
+          Rbc.z/=rbc;
 
           CosTheta=(Rab.x*Rbc.x+Rab.y*Rbc.y+Rab.z*Rbc.z);
           break;
@@ -5253,16 +5542,19 @@ void PrintAdsorbateTorsionEnergyStatus(void)
       Dab.x=posA.x-posB.x;
       Dab.y=posA.y-posB.y;
       Dab.z=posA.z-posB.z;
+      Dab=ApplyBoundaryCondition(Dab);
 
       Dbc.x=posC.x-posB.x;
       Dbc.y=posC.y-posB.y;
       Dbc.z=posC.z-posB.z;
+      Dbc=ApplyBoundaryCondition(Dbc);
       rbc=sqrt(SQR(Dbc.x)+SQR(Dbc.y)+SQR(Dbc.z));
       Dbc.x/=rbc; Dbc.y/=rbc; Dbc.z/=rbc;
 
       Dcd.x=posD.x-posC.x;
       Dcd.y=posD.y-posC.y;
       Dcd.z=posD.z-posC.z;
+      Dcd=ApplyBoundaryCondition(Dcd);
 
       dot_ab=Dab.x*Dbc.x+Dab.y*Dbc.y+Dab.z*Dbc.z;
       dot_cd=Dcd.x*Dbc.x+Dcd.y*Dbc.y+Dcd.z*Dbc.z;
@@ -5271,17 +5563,21 @@ void PrintAdsorbateTorsionEnergyStatus(void)
       dr.y=Dab.y-dot_ab*Dbc.y;
       dr.z=Dab.z-dot_ab*Dbc.z;
       r=sqrt(SQR(dr.x)+SQR(dr.y)+SQR(dr.z));
-      dr.x/=r; dr.y/=r; dr.z/=r;
+      if (r!=0.0){
+        dr.x/=r; dr.y/=r; dr.z/=r;
+      }
 
       ds.x=Dcd.x-dot_cd*Dbc.x;
       ds.y=Dcd.y-dot_cd*Dbc.y;
       ds.z=Dcd.z-dot_cd*Dbc.z;
       s=sqrt(SQR(ds.x)+SQR(ds.y)+SQR(ds.z));
-      ds.x/=s; ds.y/=s; ds.z/=s;
+      if (s!=0.0){
+        ds.x/=s; ds.y/=s; ds.z/=s;
+      }
 
       // compute Cos(Phi)
       // Phi is defined in protein convention Phi(trans)=Pi
-      CosPhi=dr.x*ds.x+dr.y*ds.y+dr.z*ds.z;
+      CosPhi=MIN2(MAX2(dr.x*ds.x+dr.y*ds.y+dr.z*ds.z,-1.0),1.0);
 
       Pb.x=Dab.z*Dbc.y-Dab.y*Dbc.z;
       Pb.y=Dab.x*Dbc.z-Dab.z*Dbc.x;
@@ -5301,7 +5597,7 @@ void PrintAdsorbateTorsionEnergyStatus(void)
                      PseudoAtoms[Components[Type].Type[C]].Name,
                      PseudoAtoms[Components[Type].Type[D]].Name);
 
-      U=PrintTorsionEnergyStatus(nr++,string,Components[Type].TorsionType[i],parms,Phi);
+      U=PrintTorsionEnergyStatus(nr++,string,Components[Type].TorsionType[i],parms,Phi,posA,posB,posC,posD);
 
       UAdsorbateTorsion+=U;
     }
@@ -5370,17 +5666,21 @@ void PrintAdsorbateImproperTorsionEnergyStatus(void)
       dr.y=Dab.y-dot_ab*Dbc.y;
       dr.z=Dab.z-dot_ab*Dbc.z;
       r=sqrt(SQR(dr.x)+SQR(dr.y)+SQR(dr.z));
-      dr.x/=r; dr.y/=r; dr.z/=r;
+      if (r!=0.0){
+        dr.x/=r; dr.y/=r; dr.z/=r;
+      }
 
       ds.x=Dcd.x-dot_cd*Dbc.x;
       ds.y=Dcd.y-dot_cd*Dbc.y;
       ds.z=Dcd.z-dot_cd*Dbc.z;
       s=sqrt(SQR(ds.x)+SQR(ds.y)+SQR(ds.z));
-      ds.x/=s; ds.y/=s; ds.z/=s;
+      if (s!=0.0){
+        ds.x/=s; ds.y/=s; ds.z/=s;
+      }
 
       // compute Cos(Phi)
       // Phi is defined in protein convention Phi(trans)=Pi
-      CosPhi=dr.x*ds.x+dr.y*ds.y+dr.z*ds.z;
+      CosPhi=MIN2(MAX2(dr.x*ds.x+dr.y*ds.y+dr.z*ds.z,-1.0),1.0);
 
       Pb.x=Dab.z*Dbc.y-Dab.y*Dbc.z;
       Pb.y=Dab.x*Dbc.z-Dab.z*Dbc.x;
@@ -5518,7 +5818,7 @@ void PrintAdsorbateBondBendEnergyStatus(void)
       Rbc.y/=rbc;
       Rbc.z/=rbc;
 
-      CosTheta=(Rab.x*Rbc.x+Rab.y*Rbc.y+Rab.z*Rbc.z);
+      CosTheta=MAX2(MIN2(Rab.x*Rbc.x+Rab.y*Rbc.y+Rab.z*Rbc.z,1.0),-1.0);
       Theta=acos(CosTheta);
 
       parms=Components[Type].BondBendArguments[i];
@@ -5679,13 +5979,17 @@ void PrintAdsorbateBondTorsionEnergyStatus(void)
       dr.y=Dab.y-dot_ab*Dbc.y;
       dr.z=Dab.z-dot_ab*Dbc.z;
       r=sqrt(SQR(dr.x)+SQR(dr.y)+SQR(dr.z));
-      dr.x/=r; dr.y/=r; dr.z/=r;
+      if (r!=0.0){
+        dr.x/=r; dr.y/=r; dr.z/=r;
+      }
 
       ds.x=Dcd.x-dot_cd*Dbc.x;
       ds.y=Dcd.y-dot_cd*Dbc.y;
       ds.z=Dcd.z-dot_cd*Dbc.z;
       s=sqrt(SQR(ds.x)+SQR(ds.y)+SQR(ds.z));
-      ds.x/=s; ds.y/=s; ds.z/=s;
+      if (s!=0.0){
+        ds.x/=s; ds.y/=s; ds.z/=s;
+      }
 
       CosPhi=dr.x*ds.x+dr.y*ds.y+dr.z*ds.z;
 
@@ -5789,13 +6093,17 @@ void PrintAdsorbateBendTorsionEnergyStatus(void)
       dr.y=Dab.y-dot_ab*Dbc.y;
       dr.z=Dab.z-dot_ab*Dbc.z;
       r=sqrt(SQR(dr.x)+SQR(dr.y)+SQR(dr.z));
-      dr.x/=r; dr.y/=r; dr.z/=r;
+      if (r!=0.0){
+        dr.x/=r; dr.y/=r; dr.z/=r;
+      }
 
       ds.x=Dcd.x-dot_cd*Dbc.x;
       ds.y=Dcd.y-dot_cd*Dbc.y;
       ds.z=Dcd.z-dot_cd*Dbc.z;
       s=sqrt(SQR(ds.x)+SQR(ds.y)+SQR(ds.z));
-      ds.x/=s; ds.y/=s; ds.z/=s;
+      if (s!=0.0){
+        ds.x/=s; ds.y/=s; ds.z/=s;
+      }
 
       CosPhi=dr.x*ds.x+dr.y*ds.y+dr.z*ds.z;
 
@@ -6300,26 +6608,30 @@ void PrintCationBendEnergyStatus(void)
           Rab.x=posA.x-posB.x;
           Rab.y=posA.y-posB.y;
           Rab.z=posA.z-posB.z;
+          Rab=ApplyBoundaryCondition(Rab);
           rab=sqrt(SQR(Rab.x)+SQR(Rab.y)+SQR(Rab.z));
-          Rab.x/=rab;
-          Rab.y/=rab;
-          Rab.z/=rab;
-
+          
           Rbc.x=posC.x-posB.x;
           Rbc.y=posC.y-posB.y;
           Rbc.z=posC.z-posB.z;
+          Rbc=ApplyBoundaryCondition(Rbc);
           rbc=sqrt(SQR(Rbc.x)+SQR(Rbc.y)+SQR(Rbc.z));
-          Rbc.x/=rbc;
-          Rbc.y/=rbc;
-          Rbc.z/=rbc;
-
-          Rac.x=posC.x-posA.x;
-          Rac.y=posC.y-posA.y;
-          Rac.z=posC.z-posA.z;
+          
+          Rac.x=Rbc.x-Rab.x;
+          Rac.y=Rbc.y-Rab.y;
+          Rac.z=Rbc.z-Rab.z;
           rac=sqrt(SQR(Rac.x)+SQR(Rac.y)+SQR(Rac.z));
           Rac.x/=rac;
           Rac.y/=rac;
           Rac.z/=rac;
+
+          Rab.x/=rab;
+          Rab.y/=rab;
+          Rab.z/=rab;
+
+          Rbc.x/=rbc;
+          Rbc.y/=rbc;
+          Rbc.z/=rbc;
 
           CosTheta=(Rab.x*Rbc.x+Rab.y*Rbc.y+Rab.z*Rbc.z);
           break;
@@ -6489,16 +6801,19 @@ void PrintCationTorsionEnergyStatus(void)
       Dab.x=posA.x-posB.x;
       Dab.y=posA.y-posB.y;
       Dab.z=posA.z-posB.z;
+      Dab=ApplyBoundaryCondition(Dab);
 
       Dbc.x=posC.x-posB.x;
       Dbc.y=posC.y-posB.y;
       Dbc.z=posC.z-posB.z;
+      Dbc=ApplyBoundaryCondition(Dbc);
       rbc=sqrt(SQR(Dbc.x)+SQR(Dbc.y)+SQR(Dbc.z));
       Dbc.x/=rbc; Dbc.y/=rbc; Dbc.z/=rbc;
 
       Dcd.x=posD.x-posC.x;
       Dcd.y=posD.y-posC.y;
       Dcd.z=posD.z-posC.z;
+      Dcd=ApplyBoundaryCondition(Dcd);
 
       dot_ab=Dab.x*Dbc.x+Dab.y*Dbc.y+Dab.z*Dbc.z;
       dot_cd=Dcd.x*Dbc.x+Dcd.y*Dbc.y+Dcd.z*Dbc.z;
@@ -6507,17 +6822,21 @@ void PrintCationTorsionEnergyStatus(void)
       dr.y=Dab.y-dot_ab*Dbc.y;
       dr.z=Dab.z-dot_ab*Dbc.z;
       r=sqrt(SQR(dr.x)+SQR(dr.y)+SQR(dr.z));
-      dr.x/=r; dr.y/=r; dr.z/=r;
+      if (r!=0.0){
+        dr.x/=r; dr.y/=r; dr.z/=r;
+      }
 
       ds.x=Dcd.x-dot_cd*Dbc.x;
       ds.y=Dcd.y-dot_cd*Dbc.y;
       ds.z=Dcd.z-dot_cd*Dbc.z;
       s=sqrt(SQR(ds.x)+SQR(ds.y)+SQR(ds.z));
-      ds.x/=s; ds.y/=s; ds.z/=s;
+      if (s!=0.0){
+        ds.x/=s; ds.y/=s; ds.z/=s;
+      }
 
       // compute Cos(Phi)
       // Phi is defined in protein convention Phi(trans)=Pi
-      CosPhi=dr.x*ds.x+dr.y*ds.y+dr.z*ds.z;
+      CosPhi=MIN2(MAX2(dr.x*ds.x+dr.y*ds.y+dr.z*ds.z,-1.0),1.0);
 
       Pb.x=Dab.z*Dbc.y-Dab.y*Dbc.z;
       Pb.y=Dab.x*Dbc.z-Dab.z*Dbc.x;
@@ -6537,7 +6856,7 @@ void PrintCationTorsionEnergyStatus(void)
                      PseudoAtoms[Components[Type].Type[C]].Name,
                      PseudoAtoms[Components[Type].Type[D]].Name);
 
-      U=PrintTorsionEnergyStatus(nr++,string,Components[Type].TorsionType[i],parms,Phi);
+      U=PrintTorsionEnergyStatus(nr++,string,Components[Type].TorsionType[i],parms,Phi,posA,posB,posC,posD);
 
       UCationTorsion+=U;
     }
@@ -6606,17 +6925,21 @@ void PrintCationImproperTorsionEnergyStatus(void)
       dr.y=Dab.y-dot_ab*Dbc.y;
       dr.z=Dab.z-dot_ab*Dbc.z;
       r=sqrt(SQR(dr.x)+SQR(dr.y)+SQR(dr.z));
-      dr.x/=r; dr.y/=r; dr.z/=r;
+      if (r!=0.0){
+        dr.x/=r; dr.y/=r; dr.z/=r;
+      }
 
       ds.x=Dcd.x-dot_cd*Dbc.x;
       ds.y=Dcd.y-dot_cd*Dbc.y;
       ds.z=Dcd.z-dot_cd*Dbc.z;
       s=sqrt(SQR(ds.x)+SQR(ds.y)+SQR(ds.z));
-      ds.x/=s; ds.y/=s; ds.z/=s;
+      if (s!=0.0){
+        ds.x/=s; ds.y/=s; ds.z/=s;
+      }
 
       // compute Cos(Phi)
       // Phi is defined in protein convention Phi(trans)=Pi
-      CosPhi=dr.x*ds.x+dr.y*ds.y+dr.z*ds.z;
+      CosPhi=MIN2(MAX2(dr.x*ds.x+dr.y*ds.y+dr.z*ds.z,-1.0),1.0);
 
       Pb.x=Dab.z*Dbc.y-Dab.y*Dbc.z;
       Pb.y=Dab.x*Dbc.z-Dab.z*Dbc.x;
@@ -6754,7 +7077,7 @@ void PrintCationBondBendEnergyStatus(void)
       Rbc.y/=rbc;
       Rbc.z/=rbc;
 
-      CosTheta=(Rab.x*Rbc.x+Rab.y*Rbc.y+Rab.z*Rbc.z);
+      CosTheta=MAX2(MIN2(Rab.x*Rbc.x+Rab.y*Rbc.y+Rab.z*Rbc.z,1.0),-1.0);
       Theta=acos(CosTheta);
 
       parms=Components[Type].BondBendArguments[i];
@@ -6915,13 +7238,17 @@ void PrintCationBondTorsionEnergyStatus(void)
       dr.y=Dab.y-dot_ab*Dbc.y;
       dr.z=Dab.z-dot_ab*Dbc.z;
       r=sqrt(SQR(dr.x)+SQR(dr.y)+SQR(dr.z));
-      dr.x/=r; dr.y/=r; dr.z/=r;
+      if (r!=0.0){
+        dr.x/=r; dr.y/=r; dr.z/=r;
+      }
 
       ds.x=Dcd.x-dot_cd*Dbc.x;
       ds.y=Dcd.y-dot_cd*Dbc.y;
       ds.z=Dcd.z-dot_cd*Dbc.z;
       s=sqrt(SQR(ds.x)+SQR(ds.y)+SQR(ds.z));
-      ds.x/=s; ds.y/=s; ds.z/=s;
+      if (s!=0.0){
+        ds.x/=s; ds.y/=s; ds.z/=s;
+      }
 
       CosPhi=dr.x*ds.x+dr.y*ds.y+dr.z*ds.z;
 
@@ -7025,13 +7352,17 @@ void PrintCationBendTorsionEnergyStatus(void)
       dr.y=Dab.y-dot_ab*Dbc.y;
       dr.z=Dab.z-dot_ab*Dbc.z;
       r=sqrt(SQR(dr.x)+SQR(dr.y)+SQR(dr.z));
-      dr.x/=r; dr.y/=r; dr.z/=r;
+      if (r!=0.0){
+        dr.x/=r; dr.y/=r; dr.z/=r;
+      }
 
       ds.x=Dcd.x-dot_cd*Dbc.x;
       ds.y=Dcd.y-dot_cd*Dbc.y;
       ds.z=Dcd.z-dot_cd*Dbc.z;
       s=sqrt(SQR(ds.x)+SQR(ds.y)+SQR(ds.z));
-      ds.x/=s; ds.y/=s; ds.z/=s;
+      if (s!=0.0){
+        ds.x/=s; ds.y/=s; ds.z/=s;
+      }
 
       CosPhi=dr.x*ds.x+dr.y*ds.y+dr.z*ds.z;
 

@@ -41,6 +41,12 @@
 #define TWO_PI (2.0*M_PI)
 #define FOUR_PI (4.0*M_PI)
 #define EIGHT_PI (8.0*M_PI)
+#define const1over_sqrt5 (1/sqrt(5))
+#define const1over_sqrt10 (1/sqrt(10))
+#define const1over_sqrt15 (1/sqrt(15))
+#define ADDT_K 2.815891616117388
+#define ADDT_tanh_K 0.992861208914406
+#define ADDT_tanh_K_squared 0.985773380166976
 
 // Zero charge is set to a very small value. All electrostatic properties depend on
 // a particle having a non-zero charge.

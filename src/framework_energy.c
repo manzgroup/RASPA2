@@ -750,14 +750,14 @@ REAL CalculateFrameworkUreyBradleyEnergy(int flag,int f2,int atom_id)
 REAL CalculateFrameworkBendEnergy(int flag,int f2,int atom_id)
 {
   int i,A,B,C,D,f1;
-  REAL *parms,U,temp,temp2;
+  REAL *parms,U,temp,temp2,temp3;
   REAL CosTheta,Theta,SinTheta;
+  REAL CosPar1,SQRCosPar1,SQRCosTheta,p_Theta,p_Par1,w_Theta;
   REAL rab,rbc,rac,DTDX,UHostBend;
   VECTOR posA,posB,posC,posD;
   VECTOR Rab,Rbc,Rac;
   VECTOR Rad,Rbd,Rcd,t,ip,ap,cp;
   REAL delta,rt2,rap2,rcp2;
-
   UHostBend=0.0;
   for(f1=0;f1<Framework[CurrentSystem].NumberOfFrameworks;f1++)
   {
@@ -827,27 +827,28 @@ REAL CalculateFrameworkBendEnergy(int flag,int f2,int atom_id)
               Rab.z=posA.z-posB.z;
               Rab=ApplyBoundaryCondition(Rab);
               rab=sqrt(SQR(Rab.x)+SQR(Rab.y)+SQR(Rab.z));
-              Rab.x/=rab;
-              Rab.y/=rab;
-              Rab.z/=rab;
-
+              
               Rbc.x=posC.x-posB.x;
               Rbc.y=posC.y-posB.y;
               Rbc.z=posC.z-posB.z;
               Rbc=ApplyBoundaryCondition(Rbc);
               rbc=sqrt(SQR(Rbc.x)+SQR(Rbc.y)+SQR(Rbc.z));
-              Rbc.x/=rbc;
-              Rbc.y/=rbc;
-              Rbc.z/=rbc;
-
-              Rac.x=posC.x-posA.x;
-              Rac.y=posC.y-posA.y;
-              Rac.z=posC.z-posA.z;
-              Rac=ApplyBoundaryCondition(Rac);
+              
+              Rac.x=Rbc.x-Rab.x;
+              Rac.y=Rbc.y-Rab.y;
+              Rac.z=Rbc.z-Rab.z;
               rac=sqrt(SQR(Rac.x)+SQR(Rac.y)+SQR(Rac.z));
               Rac.x/=rac;
               Rac.y/=rac;
               Rac.z/=rac;
+
+              Rab.x/=rab;
+              Rab.y/=rab;
+              Rab.z/=rab;
+
+              Rbc.x/=rbc;
+              Rbc.y/=rbc;
+              Rbc.z/=rbc;
 
               CosTheta=(Rab.x*Rbc.x+Rab.y*Rbc.y+Rab.z*Rbc.z);
               break;
@@ -868,6 +869,27 @@ REAL CalculateFrameworkBendEnergy(int flag,int f2,int atom_id)
               // p_0/k_B [K/rad^2]
               // p_1     [degrees]
               U=0.5*parms[0]*SQR(Theta-parms[1]);
+              break;
+            case MANZ_BEND:
+              // 2*(cos(Theta) - cos(parms[1]))^2/(sin(Theta)^2 + 3*sin(parms[1])^2*(tanh(2*sin(parms[1]/2))/tanh(2*sin(Theta/2))))
+              // Use equivalent function re-expressed using only the cosine functions to save computational cost.
+              // ===============================================
+              // parms[0] angle-bending force constant
+              // parms[1] equilibrium angle in radians
+              if ((fabs(parms[1] - M_PI) + fabs(Theta - M_PI)) < 1e-6) {
+                U = 0;
+              } else {
+                CosPar1 = cos(parms[1]);
+                SQRCosPar1 = SQR(CosPar1);
+                SQRCosTheta = SQR(CosTheta);
+                p_Theta = sqrt(2*(1.0 - CosTheta));
+                p_Par1 = sqrt(2*(1.0 - CosPar1));
+                temp = tanh(p_Theta);
+                temp2 = tanh(p_Par1);
+                temp3 = CosTheta - CosPar1;
+                w_Theta = 1 - SQRCosTheta + 3*(1-SQRCosPar1)*(temp/temp2);
+                U = parms[0]*(2*SQR(temp3))/w_Theta;
+              }
               break;
             case CORE_SHELL_BEND:
               // (1/2)p_0*(theta-p_1)^2
@@ -1096,14 +1118,23 @@ REAL CalculateFrameworkTorsionEnergy(int flag,int f2,int atom_id)
 {
   int i,A,B,C,D,f1;
   POINT posA,posB,posC,posD;
-  REAL rbc,U;
+  REAL rbc,rab,rcd,U;
+  REAL temp;
   VECTOR Dab,Dcb,Ddc,dr,ds;
+  VECTOR Rvec_ba,Rvec_bc,Rvec_cd,Rhat_ba,Rhat_bc,Rhat_cd;
   REAL dot_ab,dot_cd,r,s,sign;
+  REAL SindelPhi,CosdelPhi,Sin2delPhi,Cos2delPhi,Sin3delPhi,Cos3delPhi,Sin4delPhi,Cos4delPhi;
+  REAL Theta_abc,Theta_bcd,CosTheta_abc,CosTheta_bcd;
+  REAL temp_coef1,temp_coef2,temp_coef3,temp_coef4,U_cos,U_sin;
+  REAL cht_1,cht_2,cht_eq_1,cht_eq_2;
+  REAL pow2_cht_1,pow2_cht_2,pow2_cht_eq_1,pow2_cht_eq_2,pow3_cht_1,pow3_cht_2,pow3_cht_eq_1,pow3_cht_eq_2;
+  REAL P1_1,P1_2,P2_1,P2_2,P3_1,P3_2,P4_1,P4_2;
+  REAL P1_eq_1,P1_eq_2,P2_eq_1,P2_eq_2,P3_eq_1,P3_eq_2,P4_eq_1,P4_eq_2;
+  REAL fp1,fp2,fp3,fp4,fp1_eq,fp2_eq,fp3_eq,fp4_eq;
   REAL CosPhi,Phi,CosPhi2,SinPhi,UHostTorsion;
   REAL ShiftedCosPhi,ShiftedCosPhi2;
   VECTOR Pb,Pc;
   REAL *parms;
-
   UHostTorsion=0.0;
   for(f1=0;f1<Framework[CurrentSystem].NumberOfFrameworks;f1++)
   {
@@ -1129,6 +1160,7 @@ REAL CalculateFrameworkTorsionEnergy(int flag,int f2,int atom_id)
           Dab.y=posA.y-posB.y;
           Dab.z=posA.z-posB.z;
           Dab=ApplyBoundaryCondition(Dab);
+          
 
           Dcb.x=posC.x-posB.x;
           Dcb.y=posC.y-posB.y;
@@ -1149,13 +1181,17 @@ REAL CalculateFrameworkTorsionEnergy(int flag,int f2,int atom_id)
           dr.y=Dab.y-dot_ab*Dcb.y;
           dr.z=Dab.z-dot_ab*Dcb.z;
           r=MAX2((REAL)1.0e-8,sqrt(SQR(dr.x)+SQR(dr.y)+SQR(dr.z)));
-          dr.x/=r; dr.y/=r; dr.z/=r;
+          if (r!=0.0){
+            dr.x/=r; dr.y/=r; dr.z/=r;
+          }
 
           ds.x=Ddc.x-dot_cd*Dcb.x;
           ds.y=Ddc.y-dot_cd*Dcb.y;
           ds.z=Ddc.z-dot_cd*Dcb.z;
           s=MAX2((REAL)1.0e-8,sqrt(SQR(ds.x)+SQR(ds.y)+SQR(ds.z)));
-          ds.x/=s; ds.y/=s; ds.z/=s;
+          if (s!=0.0){
+            ds.x/=s; ds.y/=s; ds.z/=s;
+          }
 
           // compute Cos(Phi)
           // Phi is defined in protein convention Phi(trans)=Pi
@@ -1318,6 +1354,232 @@ REAL CalculateFrameworkTorsionEnergy(int flag,int f2,int atom_id)
               SinPhi=SIGN(MAX2((REAL)1.0e-8,fabs(SinPhi)),SinPhi);  // remove singularity
               U=parms[0]*(1.0+cos(parms[1]*Phi-parms[2]));
               break;
+            case CADT_MODE_ONE_ONLY:
+              // p_0*(1-cos(phi-p_1))
+              // ========================
+              // parms[0]  equilibrium dihedral value
+              // parms[1]  dihedral torsion force constant 
+              // the sign of the angle-phi is positive if (Rab x Rbc) x (Rbc x Rcd) is in the
+              // same direction as Dbc, and negative otherwise
+              Pb.x=Dab.z*Dcb.y-Dab.y*Dcb.z;
+              Pb.y=Dab.x*Dcb.z-Dab.z*Dcb.x;
+              Pb.z=Dab.y*Dcb.x-Dab.x*Dcb.y;
+              Pc.x=Dcb.y*Ddc.z-Dcb.z*Ddc.y;
+              Pc.y=Dcb.z*Ddc.x-Dcb.x*Ddc.z;
+              Pc.z=Dcb.x*Ddc.y-Dcb.y*Ddc.x;
+              temp=(Dcb.x*(Pc.z*Pb.y-Pc.y*Pb.z)+Dcb.y*(Pb.z*Pc.x-Pb.x*Pc.z)
+                    +Dcb.z*(Pc.y*Pb.x-Pc.x*Pb.y));
+              if (temp>=0) {
+                Phi=acos(CosPhi);
+              } else {
+                Phi=-acos(CosPhi);
+              }
+              U=parms[1]*(1.0-cos(Phi-parms[0]));
+              break;
+            case CADT_DIHEDRAL:
+              // parms[0]  equilibrium dihedral value
+              // parms[1] to parms[7] are force constants for torsion modes 1 to 7, respectively
+              // the sign of the angle-phi is positive if (Rab x Rbc) x (Rbc x Rcd) is in the
+              // same direction as Dbc, and negative otherwise
+              Pb.x=Dab.z*Dcb.y-Dab.y*Dcb.z;
+              Pb.y=Dab.x*Dcb.z-Dab.z*Dcb.x;
+              Pb.z=Dab.y*Dcb.x-Dab.x*Dcb.y;
+              Pc.x=Dcb.y*Ddc.z-Dcb.z*Ddc.y;
+              Pc.y=Dcb.z*Ddc.x-Dcb.x*Ddc.z;
+              Pc.z=Dcb.x*Ddc.y-Dcb.y*Ddc.x;
+              temp=(Dcb.x*(Pc.z*Pb.y-Pc.y*Pb.z)+Dcb.y*(Pb.z*Pc.x-Pb.x*Pc.z)
+                    +Dcb.z*(Pc.y*Pb.x-Pc.x*Pb.y));
+              if (temp>=0) {
+                Phi=acos(CosPhi);
+              } else {
+                Phi=-acos(CosPhi);
+              }
+              SindelPhi=sin(Phi-parms[0]);
+              CosdelPhi=cos(Phi-parms[0]);
+              Sin2delPhi=sin(2*(Phi-parms[0]));
+              Cos2delPhi=cos(2*(Phi-parms[0]));
+              Sin3delPhi=sin(3*(Phi-parms[0]));
+              Cos3delPhi=cos(3*(Phi-parms[0]));
+              Sin4delPhi=sin(4*(Phi-parms[0]));
+              Cos4delPhi=cos(4*(Phi-parms[0]));
+              
+              temp_coef1 = 3*const1over_sqrt10*parms[5] + const1over_sqrt15*parms[7];
+              temp_coef2 = 2*const1over_sqrt5*parms[6] - const1over_sqrt15*parms[7];
+              temp_coef3 = -1*const1over_sqrt10*parms[5] + 3*const1over_sqrt15*parms[7];
+              temp_coef4 = -1*const1over_sqrt5*parms[6] - 2*const1over_sqrt15*parms[7];
+
+              U_cos = parms[1]*(1.0-CosdelPhi) + parms[2]*(1.0-Cos2delPhi) + parms[3]*(1.0-Cos3delPhi) + parms[4]*(1.0-Cos4delPhi);
+              U_sin = temp_coef1*SindelPhi + temp_coef2*Sin2delPhi + temp_coef3*Sin3delPhi + temp_coef4*Sin4delPhi;
+
+              U = U_cos + U_sin;
+              break;
+            case ADDT_MODE_ONE_ONLY:
+              Rvec_ba.x = posA.x-posB.x;
+              Rvec_ba.y = posA.y-posB.y;
+              Rvec_ba.z = posA.z-posB.z;
+              Rvec_ba = ApplyBoundaryCondition(Rvec_ba);
+              rab = sqrt(SQR(Rvec_ba.x)+SQR(Rvec_ba.y)+SQR(Rvec_ba.z));
+              Rhat_ba.x/=rab; Rhat_ba.y/=rab; Rhat_ba.z/=rab; 
+
+              Rvec_bc.x = posC.x-posB.x;
+              Rvec_bc.y = posC.y-posB.y;
+              Rvec_bc.z = posC.z-posB.z;
+              Rvec_bc = ApplyBoundaryCondition(Rvec_bc);
+              rbc = sqrt(SQR(Rvec_bc.x)+SQR(Rvec_bc.y)+SQR(Rvec_bc.z));
+              Rhat_bc.x/=rbc; Rhat_bc.y/=rbc; Rhat_bc.z/=rbc;
+
+              Rvec_cd.x = posD.x-posC.x;
+              Rvec_cd.y = posD.y-posC.y;
+              Rvec_cd.z = posD.z-posC.z;
+              Rvec_cd = ApplyBoundaryCondition(Rvec_cd);
+              rcd = sqrt(SQR(Rvec_cd.x)+SQR(Rvec_cd.y)+SQR(Rvec_cd.z));
+              Rhat_cd.x/=rcd; Rhat_cd.y/=rcd; Rhat_cd.z/=rcd;
+
+              CosTheta_abc=MAX2(MIN2(Rhat_ba.x*Rhat_bc.x+Rhat_ba.y*Rhat_bc.y+Rhat_ba.z*Rhat_bc.z,1.0),-1.0);
+              Theta_abc=acos(CosTheta_abc);
+              CosTheta_bcd=MAX2(MIN2((-Rhat_bc.x)*Rhat_cd.x+(-Rhat_bc.y)*Rhat_cd.y+(-Rhat_bc.z)*Rhat_cd.z,1.0),-1.0);
+              Theta_bcd=acos(CosTheta_bcd);
+
+              Pb.x=Dab.z*Dcb.y-Dab.y*Dcb.z;
+              Pb.y=Dab.x*Dcb.z-Dab.z*Dcb.x;
+              Pb.z=Dab.y*Dcb.x-Dab.x*Dcb.y;
+              Pc.x=Dcb.y*Ddc.z-Dcb.z*Ddc.y;
+              Pc.y=Dcb.z*Ddc.x-Dcb.x*Ddc.z;
+              Pc.z=Dcb.x*Ddc.y-Dcb.y*Ddc.x;
+              temp=(Dcb.x*(Pc.z*Pb.y-Pc.y*Pb.z)+Dcb.y*(Pb.z*Pc.x-Pb.x*Pc.z)
+                    +Dcb.z*(Pc.y*Pb.x-Pc.x*Pb.y));
+              if (temp>=0) {
+                Phi=acos(CosPhi);
+              } else {
+                Phi=-acos(CosPhi);
+              }
+              CosdelPhi=cos(Phi-parms[0]);
+              cht_1=cos(Theta_abc/2);
+              cht_2=cos(Theta_bcd/2);
+              cht_eq_1=cos(parms[2]/2);
+              cht_eq_2=cos(parms[3]/2);
+              pow3_cht_1 = cht_1*cht_1*cht_1;
+              pow3_cht_2 = cht_2*cht_2*cht_2;
+              pow3_cht_eq_1 = cht_eq_1*cht_eq_1*cht_eq_1;
+              pow3_cht_eq_2 = cht_eq_2*cht_eq_2*cht_eq_2;
+              P1_1=(cht_1 + 3*pow3_cht_1)/4;
+              P1_2=(cht_2 + 3*pow3_cht_2)/4;
+              P1_eq_1=(cht_eq_1 + 3*pow3_cht_eq_1)/4;
+              P1_eq_2=(cht_eq_2 + 3*pow3_cht_eq_2)/4;
+              fp1 = tanh(ADDT_K*P1_1)*tanh(ADDT_K*P1_2)/(ADDT_tanh_K_squared);
+              fp1_eq = tanh(ADDT_K*P1_eq_1)*tanh(ADDT_K*P1_eq_2)/(ADDT_tanh_K_squared);
+              U = parms[1]*((1/2)*(((fp1/fp1_eq)-1)*((fp1/fp1_eq)-1)) + (fp1/fp1_eq)*(1-CosdelPhi));
+              break;
+            case ADDT_DIHEDRAL:
+              Rvec_ba.x = posA.x-posB.x;
+              Rvec_ba.y = posA.y-posB.y;
+              Rvec_ba.z = posA.z-posB.z;
+              Rvec_ba = ApplyBoundaryCondition(Rvec_ba);
+              rab = sqrt(SQR(Rvec_ba.x)+SQR(Rvec_ba.y)+SQR(Rvec_ba.z));
+              Rhat_ba.x/=rab; Rhat_ba.y/=rab; Rhat_ba.z/=rab; 
+
+              Rvec_bc.x = posC.x-posB.x;
+              Rvec_bc.y = posC.y-posB.y;
+              Rvec_bc.z = posC.z-posB.z;
+              Rvec_bc = ApplyBoundaryCondition(Rvec_bc);
+              rbc = sqrt(SQR(Rvec_bc.x)+SQR(Rvec_bc.y)+SQR(Rvec_bc.z));
+              Rhat_bc.x/=rbc; Rhat_bc.y/=rbc; Rhat_bc.z/=rbc;
+
+              Rvec_cd.x = posD.x-posC.x;
+              Rvec_cd.y = posD.y-posC.y;
+              Rvec_cd.z = posD.z-posC.z;
+              Rvec_cd = ApplyBoundaryCondition(Rvec_cd);
+              rcd = sqrt(SQR(Rvec_cd.x)+SQR(Rvec_cd.y)+SQR(Rvec_cd.z));
+              Rhat_cd.x/=rcd; Rhat_cd.y/=rcd; Rhat_cd.z/=rcd;
+
+              CosTheta_abc=MAX2(MIN2(Rhat_ba.x*Rhat_bc.x+Rhat_ba.y*Rhat_bc.y+Rhat_ba.z*Rhat_bc.z,1.0),-1.0);
+              Theta_abc=acos(CosTheta_abc);
+              CosTheta_bcd=MAX2(MIN2((-Rhat_bc.x)*Rhat_cd.x+(-Rhat_bc.y)*Rhat_cd.y+(-Rhat_bc.z)*Rhat_cd.z,1.0),-1.0);
+              Theta_bcd=acos(CosTheta_bcd);
+
+              Pb.x=Dab.z*Dcb.y-Dab.y*Dcb.z;
+              Pb.y=Dab.x*Dcb.z-Dab.z*Dcb.x;
+              Pb.z=Dab.y*Dcb.x-Dab.x*Dcb.y;
+              Pc.x=Dcb.y*Ddc.z-Dcb.z*Ddc.y;
+              Pc.y=Dcb.z*Ddc.x-Dcb.x*Ddc.z;
+              Pc.z=Dcb.x*Ddc.y-Dcb.y*Ddc.x;
+              temp=(Dcb.x*(Pc.z*Pb.y-Pc.y*Pb.z)+Dcb.y*(Pb.z*Pc.x-Pb.x*Pc.z)
+                    +Dcb.z*(Pc.y*Pb.x-Pc.x*Pb.y));
+              if (temp>=0) {
+                Phi=acos(CosPhi);
+              } else {
+                Phi=-acos(CosPhi);
+              }
+              CosdelPhi=cos(Phi-parms[0]);
+              SindelPhi=sin(Phi-parms[0]);
+              Sin2delPhi=sin(2*(Phi-parms[0]));
+              Sin3delPhi=sin(3*(Phi-parms[0]));
+              Sin4delPhi=sin(4*(Phi-parms[0]));
+              cht_1=cos(Theta_abc/2);
+              cht_2=cos(Theta_bcd/2);
+              cht_eq_1=cos(parms[8]/2);
+              cht_eq_2=cos(parms[9]/2);
+
+              pow2_cht_1 = cht_1*cht_1;
+              pow2_cht_2 = cht_2*cht_2;
+              pow2_cht_eq_1 = cht_eq_1*cht_eq_1;
+              pow2_cht_eq_2 = cht_eq_2*cht_eq_2;
+              pow3_cht_1 = cht_1*cht_1*cht_1;
+              pow3_cht_2 = cht_2*cht_2*cht_2;
+              pow3_cht_eq_1 = cht_eq_1*cht_eq_1*cht_eq_1;
+              pow3_cht_eq_2 = cht_eq_2*cht_eq_2*cht_eq_2;
+
+              P1_1 = (cht_1 + 3*pow3_cht_1)/4;
+              P1_2 = (cht_2 + 3*pow3_cht_2)/4;
+              P2_1 = (3*pow2_cht_1 + pow3_cht_1*cht_1)/4;
+              P2_2 = (3*pow2_cht_2 + pow3_cht_2*cht_2)/4;
+              P3_1 = (6*pow3_cht_1 - 3*(pow3_cht_1*pow2_cht_1) + (pow3_cht_1*pow3_cht_1*cht_1))/4;
+              P3_2 = (6*pow3_cht_2 - 3*(pow3_cht_2*pow2_cht_2) + (pow3_cht_2*pow3_cht_2*cht_2))/4;   
+              P4_1 = (10*(pow3_cht_1*cht_1) - 9*(pow3_cht_1*pow3_cht_1) + 3*(pow3_cht_1*pow3_cht_1*pow2_cht_1))/4;
+              P4_2 = (10*(pow3_cht_2*cht_2) - 9*(pow3_cht_2*pow3_cht_2) + 3*(pow3_cht_2*pow3_cht_2*pow2_cht_2))/4;
+
+              P1_eq_1 = (cht_eq_1 + 3*pow3_cht_eq_1)/4;
+              P1_eq_2 = (cht_eq_2 + 3*pow3_cht_eq_2)/4;
+              P2_eq_1 = (3*pow2_cht_eq_1 + pow3_cht_eq_1*cht_eq_1)/4;
+              P2_eq_2 = (3*pow2_cht_eq_2 + pow3_cht_eq_2*cht_eq_2)/4;
+              P3_eq_1 = (6*pow3_cht_eq_1 - 3*(pow3_cht_eq_1*pow2_cht_eq_1) + (pow3_cht_eq_1*pow3_cht_eq_1*cht_eq_1))/4;
+              P3_eq_2 = (6*pow3_cht_eq_2 - 3*(pow3_cht_eq_2*pow2_cht_eq_2) + (pow3_cht_eq_2*pow3_cht_eq_2*cht_eq_2))/4;   
+              P4_eq_1 = (10*(pow3_cht_eq_1*cht_eq_1) - 9*(pow3_cht_eq_1*pow3_cht_eq_1) + 3*(pow3_cht_eq_1*pow3_cht_eq_1*pow2_cht_eq_1))/4;
+              P4_eq_2 = (10*(pow3_cht_eq_2*cht_eq_2) - 9*(pow3_cht_eq_2*pow3_cht_eq_2) + 3*(pow3_cht_eq_2*pow3_cht_eq_2*pow2_cht_eq_2))/4;
+
+              fp1 = tanh(ADDT_K*P1_1)*tanh(ADDT_K*P1_2)/(ADDT_tanh_K_squared);
+              fp2 = tanh(ADDT_K*P2_1)*tanh(ADDT_K*P2_2)/(ADDT_tanh_K_squared);
+              fp3 = tanh(ADDT_K*P3_1)*tanh(ADDT_K*P3_2)/(ADDT_tanh_K_squared);
+              fp4 = tanh(ADDT_K*P4_1)*tanh(ADDT_K*P4_2)/(ADDT_tanh_K_squared);
+
+              fp1_eq = tanh(ADDT_K*P1_eq_1)*tanh(ADDT_K*P1_eq_2)/(ADDT_tanh_K_squared);
+              fp2_eq = tanh(ADDT_K*P2_eq_1)*tanh(ADDT_K*P2_eq_2)/(ADDT_tanh_K_squared);
+              fp3_eq = tanh(ADDT_K*P3_eq_1)*tanh(ADDT_K*P3_eq_2)/(ADDT_tanh_K_squared);
+              fp4_eq = tanh(ADDT_K*P4_eq_1)*tanh(ADDT_K*P4_eq_2)/(ADDT_tanh_K_squared);
+
+              U = 0;
+              if (parms[1] != 0.0) {
+                U += parms[1]*((1/2)*(((fp1/fp1_eq)-1)*((fp1/fp1_eq)-1)) + (fp1/fp1_eq)*(1-CosdelPhi));
+              }
+              if (parms[2] != 0.0) {
+                U += parms[2]*((1/2)*(((fp2/fp1_eq)-(fp2_eq/fp1_eq))*((fp2/fp1_eq)-(fp2_eq/fp1_eq))) + (fp2/fp2_eq)*(1-cos(2*(Phi-parms[0]))));
+              }
+              if (parms[3] != 0.0) {
+                U += parms[3]*((1/2)*(((fp3/fp1_eq)-(fp3_eq/fp1_eq))*((fp3/fp1_eq)-(fp3_eq/fp1_eq))) + (fp3/fp3_eq)*(1-cos(3*(Phi-parms[0]))));
+              }
+              if (parms[4] != 0.0) {
+                U += parms[4]*((1/2)*(((fp4/fp1_eq)-(fp4_eq/fp1_eq))*((fp4/fp1_eq)-(fp4_eq/fp1_eq))) + (fp4/fp4_eq)*(1-cos(4*(Phi-parms[0]))));
+              }
+              if (parms[5] != 0.0) {
+                U += parms[5]*(3*SindelPhi*(fp1/fp1_eq) - Sin3delPhi*(fp3/fp3_eq))*const1over_sqrt10;
+              }
+              if (parms[6] != 0.0) {
+                U += parms[6]*(2*Sin2delPhi*(fp2/fp2_eq) - Sin4delPhi*(fp4/fp4_eq))*const1over_sqrt5;
+              }
+              if (parms[7] != 0.0) {
+                U += parms[7]*((SindelPhi*(fp1/fp1_eq) + 3*Sin3delPhi*(fp3/fp3_eq)) - (Sin2delPhi*(fp2/fp2_eq) + 2*Sin4delPhi*(fp4/fp4_eq)))*const1over_sqrt15;
+              }
+              break;
             case OPLS_DIHEDRAL:
               // (1/2)p_0[0]+(1/2)p_1*(1+cos(phi))+(1/2)p_2*(1-cos(2*phi))+(1/2)p_3*(1+cos(3*phi))
               // =================================================================================
@@ -1426,13 +1688,17 @@ REAL CalculateFrameworkImproperTorsionEnergy(int flag,int f2,int atom_id)
           dr.y=Dab.y-dot_ab*Dcb.y;
           dr.z=Dab.z-dot_ab*Dcb.z;
           r=sqrt(SQR(dr.x)+SQR(dr.y)+SQR(dr.z));
-          dr.x/=r; dr.y/=r; dr.z/=r;
+          if (r!=0.0){
+            dr.x/=r; dr.y/=r; dr.z/=r;
+          }
 
           ds.x=Ddc.x-dot_cd*Dcb.x;
           ds.y=Ddc.y-dot_cd*Dcb.y;
           ds.z=Ddc.z-dot_cd*Dcb.z;
           s=sqrt(SQR(ds.x)+SQR(ds.y)+SQR(ds.z));
-          ds.x/=s; ds.y/=s; ds.z/=s;
+          if (s!=0.0){
+            ds.x/=s; ds.y/=s; ds.z/=s;
+          }
 
           // compute Cos(Phi)
           // Phi is defined in protein convention Phi(trans)=Pi
@@ -1982,13 +2248,17 @@ REAL CalculateFrameworkBondTorsionEnergy(int flag,int f2,int atom_id)
           dr.y=Dab.y-dot_ab*Dcb.y;
           dr.z=Dab.z-dot_ab*Dcb.z;
           r=sqrt(SQR(dr.x)+SQR(dr.y)+SQR(dr.z));
-          dr.x/=r; dr.y/=r; dr.z/=r;
+          if (r!=0.0){
+            dr.x/=r; dr.y/=r; dr.z/=r;
+          }
 
           ds.x=Ddc.x-dot_cd*Dcb.x;
           ds.y=Ddc.y-dot_cd*Dcb.y;
           ds.z=Ddc.z-dot_cd*Dcb.z;
           s=sqrt(SQR(ds.x)+SQR(ds.y)+SQR(ds.z));
-          ds.x/=s; ds.y/=s; ds.z/=s;
+          if (s!=0.0){
+            ds.x/=s; ds.y/=s; ds.z/=s;
+          }
 
           // compute Cos(Phi)
           // Phi is defined in protein convention Phi(trans)=Pi
@@ -2095,13 +2365,17 @@ REAL CalculateFrameworkBendTorsionEnergy(int flag,int f2,int atom_id)
           dr.y=Dab.y-dot_ab*Dbc.y;
           dr.z=Dab.z-dot_ab*Dbc.z;
           r=MAX2((REAL)1.0e-8,sqrt(SQR(dr.x)+SQR(dr.y)+SQR(dr.z)));
-          dr.x/=r; dr.y/=r; dr.z/=r;
+          if (r!=0.0){
+            dr.x/=r; dr.y/=r; dr.z/=r;
+          }
 
           ds.x=Dcd.x-dot_cd*Dbc.x;
           ds.y=Dcd.y-dot_cd*Dbc.y;
           ds.z=Dcd.z-dot_cd*Dbc.z;
           s=MAX2((REAL)1.0e-8,sqrt(SQR(ds.x)+SQR(ds.y)+SQR(ds.z)));
-          ds.x/=s; ds.y/=s; ds.z/=s;
+          if (s!=0.0){
+            ds.x/=s; ds.y/=s; ds.z/=s;
+          }
 
           // compute Cos(Phi)
           // Phi is defined in protein convention Phi(trans)=Pi

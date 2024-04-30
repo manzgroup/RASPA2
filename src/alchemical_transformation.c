@@ -2911,6 +2911,10 @@ void AllocateTransientComponentMemory(void)
 				  Components[comp].BendArguments[j][0]=Components[SolventIndex].BendArguments[j][0];
 				  Components[comp].BendArguments[j][1]=Components[SolventIndex].BendArguments[j][1];
 				  break;
+				case MANZ_BEND:
+				  Components[comp].BendArguments[j][0]=Components[SolventIndex].BendArguments[j][0];
+				  Components[comp].BendArguments[j][1]=Components[SolventIndex].BendArguments[j][1];
+				  break;
 				case CORE_SHELL_BEND:
 				  // (1/2)p_0*(theta-p_1)^2
 				  // ===============================================
@@ -3312,6 +3316,46 @@ void AllocateTransientComponentMemory(void)
 				  // p_2     [degrees]
 				  Components[comp].TorsionArguments[j][0]=Components[SolventIndex].TorsionArguments[j][0];
 				  Components[comp].TorsionArguments[j][2]=Components[SolventIndex].TorsionArguments[j][2];
+				  break;
+				case CADT_MODE_ONE_ONLY:
+				  // p_0*(1-cos(phi-p_1))
+				  // ========================
+				  // parms[0]  equilibrium dihedral value
+				  // parms[1]  dihedral torsion force constant 
+				  Components[comp].TorsionArguments[j][0]=Components[SolventIndex].TorsionArguments[j][0];
+				  Components[comp].TorsionArguments[j][1]=Components[SolventIndex].TorsionArguments[j][1];
+				  break;
+				case CADT_DIHEDRAL:
+				  // p_0*(1-cos(phi-p_1))
+				  // ========================
+				  // parms[0]  equilibrium dihedral value
+				  // parms[1] to parms[7] are force constants for torsion modes 1 to 7, respectively
+				  Components[comp].TorsionArguments[j][0]=Components[SolventIndex].TorsionArguments[j][0];
+				  Components[comp].TorsionArguments[j][1]=Components[SolventIndex].TorsionArguments[j][1];
+				  Components[comp].TorsionArguments[j][2]=Components[SolventIndex].TorsionArguments[j][2];
+				  Components[comp].TorsionArguments[j][3]=Components[SolventIndex].TorsionArguments[j][3];
+				  Components[comp].TorsionArguments[j][4]=Components[SolventIndex].TorsionArguments[j][4];
+				  Components[comp].TorsionArguments[j][5]=Components[SolventIndex].TorsionArguments[j][5];
+				  Components[comp].TorsionArguments[j][6]=Components[SolventIndex].TorsionArguments[j][6];
+				  Components[comp].TorsionArguments[j][7]=Components[SolventIndex].TorsionArguments[j][7];
+				  break;
+				case ADDT_MODE_ONE_ONLY:
+				  Components[comp].TorsionArguments[j][0]=Components[SolventIndex].TorsionArguments[j][0];
+				  Components[comp].TorsionArguments[j][1]=Components[SolventIndex].TorsionArguments[j][1];
+				  Components[comp].TorsionArguments[j][2]=Components[SolventIndex].TorsionArguments[j][2];
+				  Components[comp].TorsionArguments[j][3]=Components[SolventIndex].TorsionArguments[j][3];
+				  break;
+				case ADDT_DIHEDRAL:
+				  Components[comp].TorsionArguments[j][0]=Components[SolventIndex].TorsionArguments[j][0];
+				  Components[comp].TorsionArguments[j][1]=Components[SolventIndex].TorsionArguments[j][1];
+				  Components[comp].TorsionArguments[j][2]=Components[SolventIndex].TorsionArguments[j][2];
+				  Components[comp].TorsionArguments[j][3]=Components[SolventIndex].TorsionArguments[j][3];
+				  Components[comp].TorsionArguments[j][4]=Components[SolventIndex].TorsionArguments[j][4];
+				  Components[comp].TorsionArguments[j][5]=Components[SolventIndex].TorsionArguments[j][5];
+				  Components[comp].TorsionArguments[j][6]=Components[SolventIndex].TorsionArguments[j][6];
+				  Components[comp].TorsionArguments[j][7]=Components[SolventIndex].TorsionArguments[j][7];
+				  Components[comp].TorsionArguments[j][8]=Components[SolventIndex].TorsionArguments[j][8];
+				  Components[comp].TorsionArguments[j][9]=Components[SolventIndex].TorsionArguments[j][9];
 				  break;
 				case OPLS_DIHEDRAL:
 				  // (1/2)p_0[0]+(1/2)p_1*(1+cos(phi))+(1/2)p_2*(1-cos(2*phi))+(1/2)p_3*(1+cos(3*phi))

@@ -2074,6 +2074,10 @@ void ReadComponentDefinition(int comp)
           Components[comp].BendArguments[i][0]/=ENERGY_TO_KELVIN;
           Components[comp].BendArguments[i][1]*=DEG2RAD;
           break;
+        case MANZ_BEND:
+          Components[comp].BendArguments[i][0]/=ENERGY_TO_KELVIN;
+          Components[comp].BendArguments[i][1]*=DEG2RAD;
+          break;
         case CORE_SHELL_BEND:
           // (1/2)p_0*(theta-p_1)^2
           // ===============================================
@@ -2494,6 +2498,38 @@ void ReadComponentDefinition(int comp)
           // p_2     [degrees]
           Components[comp].TorsionArguments[i][0]/=ENERGY_TO_KELVIN;
           Components[comp].TorsionArguments[i][2]*=DEG2RAD;
+          break;
+        case CADT_MODE_ONE_ONLY:
+          Components[comp].TorsionArguments[i][0]*=DEG2RAD;
+          Components[comp].TorsionArguments[i][1]/=ENERGY_TO_KELVIN;
+          break;
+        case CADT_DIHEDRAL:
+          Components[comp].TorsionArguments[i][0]*=DEG2RAD;
+          Components[comp].TorsionArguments[i][1]/=ENERGY_TO_KELVIN;
+          Components[comp].TorsionArguments[i][2]/=ENERGY_TO_KELVIN;
+          Components[comp].TorsionArguments[i][3]/=ENERGY_TO_KELVIN;
+          Components[comp].TorsionArguments[i][4]/=ENERGY_TO_KELVIN;
+          Components[comp].TorsionArguments[i][5]/=ENERGY_TO_KELVIN;
+          Components[comp].TorsionArguments[i][6]/=ENERGY_TO_KELVIN;
+          Components[comp].TorsionArguments[i][7]/=ENERGY_TO_KELVIN;
+          break;
+        case ADDT_MODE_ONE_ONLY:
+          Components[comp].TorsionArguments[i][0]*=DEG2RAD;
+          Components[comp].TorsionArguments[i][1]/=ENERGY_TO_KELVIN;
+          Components[comp].TorsionArguments[i][2]*=DEG2RAD;
+          Components[comp].TorsionArguments[i][3]*=DEG2RAD;
+          break;
+        case ADDT_DIHEDRAL:
+          Components[comp].TorsionArguments[i][0]*=DEG2RAD;
+          Components[comp].TorsionArguments[i][1]/=ENERGY_TO_KELVIN;
+          Components[comp].TorsionArguments[i][2]/=ENERGY_TO_KELVIN;
+          Components[comp].TorsionArguments[i][3]/=ENERGY_TO_KELVIN;
+          Components[comp].TorsionArguments[i][4]/=ENERGY_TO_KELVIN;
+          Components[comp].TorsionArguments[i][5]/=ENERGY_TO_KELVIN;
+          Components[comp].TorsionArguments[i][6]/=ENERGY_TO_KELVIN;
+          Components[comp].TorsionArguments[i][7]/=ENERGY_TO_KELVIN;
+          Components[comp].TorsionArguments[i][8]*=DEG2RAD;
+          Components[comp].TorsionArguments[i][9]*=DEG2RAD;
           break;
         case OPLS_DIHEDRAL:
           // (1/2)p_0[0]+(1/2)p_1*(1+cos(phi))+(1/2)p_2*(1-cos(2*phi))+(1/2)p_3*(1+cos(3*phi))
